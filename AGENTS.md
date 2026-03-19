@@ -10,7 +10,7 @@ Welcome to the Internal Developer Portal (IDP) workspace! This repository is an 
 ## 🏗 Tech Stack & Architecture
 
 - **Framework:** Next.js 16 (App Router) + React 19
-- **Styling:** Material UI (MUI v6) with `@emotion/*`. **Do not use Tailwind CSS.**
+- **Styling:** Material UI (MUI v7) with `@emotion/*`. **Do not use Tailwind CSS.**
 - **Authentication:** NextAuth.js (Entra ID / Azure AD)
 - **Infrastructure Engine:** Crossplane via `@kubernetes/client-node`
 - **Testing:** Vitest, React Testing Library, Jest-DOM (Test-Driven Development required!)

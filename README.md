@@ -5,7 +5,7 @@ A highly opinionated, secure, and developer-friendly IDP built with Next.js, Rea
 ## 🏗 Architecture & Stack
 
 - **Frontend / Backend**: Next.js 16 (App Router), React 19, TypeScript
-- **Styling**: Material UI (v6) with custom dark mode theme
+- **Styling**: Material UI (v7) with custom dark mode theme
 - **Authentication**: Microsoft Entra ID (NextAuth.js) with RBAC
 - **Infrastructure Engine**: Crossplane (via standard Kubernetes API interaction `@kubernetes/client-node`)
 - **Testing**: Vitest, React Testing Library, custom Jest-DOM assertions. TDD enforced.
