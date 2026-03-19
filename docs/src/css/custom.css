@@ -1,0 +1,67 @@
+/**
+ * Any CSS included here will be global. The classic template
+ * bundles Infima by default. Infima is a CSS framework designed to
+ * work well for content-centric websites.
+ */
+
+/* You can override the default Infima variables here. */
+:root {
+  --ifm-color-primary: #1a73e8;
+  --ifm-color-primary-dark: #1767cf;
+  --ifm-color-primary-darker: #155fbf;
+  --ifm-color-primary-darkest: #114e9d;
+  --ifm-color-primary-light: #2e7fe9;
+  --ifm-color-primary-lighter: #428cea;
+  --ifm-color-primary-lightest: #6aa4ef;
+  --ifm-code-font-size: 95%;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
+  --ifm-background-color: #f7f9fc;
+  --ifm-navbar-background-color: rgba(247, 249, 252, 0.92);
+  --ifm-footer-background-color: #111827;
+}
+
+[data-theme='dark'] {
+  --ifm-color-primary: #8ab4f8;
+  --ifm-color-primary-dark: #6fa4f7;
+  --ifm-color-primary-darker: #619cf6;
+  --ifm-color-primary-darkest: #3d86f3;
+  --ifm-color-primary-light: #a5c4f9;
+  --ifm-color-primary-lighter: #b3ccfa;
+  --ifm-color-primary-lightest: #dbe7fd;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
+  --ifm-background-color: #111827;
+  --ifm-navbar-background-color: rgba(17, 24, 39, 0.92);
+  --ifm-footer-background-color: #0b1220;
+}
+
+.hero--primary {
+  background:
+    radial-gradient(
+      circle at top left,
+      rgba(26, 115, 232, 0.18),
+      transparent 36%
+    ),
+    radial-gradient(
+      circle at bottom right,
+      rgba(24, 128, 56, 0.16),
+      transparent 28%
+    ),
+    linear-gradient(135deg, #f7f9fc 0%, #edf3fb 100%);
+  color: #0f172a;
+}
+
+[data-theme='dark'] .hero--primary {
+  background:
+    radial-gradient(
+      circle at top left,
+      rgba(138, 180, 248, 0.16),
+      transparent 36%
+    ),
+    radial-gradient(
+      circle at bottom right,
+      rgba(129, 201, 149, 0.12),
+      transparent 28%
+    ),
+    linear-gradient(135deg, #111827 0%, #172033 100%);
+  color: #e5eefc;
+}
