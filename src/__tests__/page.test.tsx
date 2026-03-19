@@ -15,7 +15,7 @@ describe('Home Page', () => {
     render(<Home />);
     expect(
       screen.getByText(
-        /Manage your cloud infrastructure and self-service deployments/i
+        /Manage your application environments and self-service deployments/i
       )
     ).toBeInTheDocument();
   });
