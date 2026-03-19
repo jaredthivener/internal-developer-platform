@@ -4,20 +4,241 @@
  */
 
 .heroBanner {
-  padding: 4rem 0;
-  text-align: center;
+  padding: 4.5rem 0 3rem;
   position: relative;
   overflow: hidden;
 }
 
+.heroGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.9fr);
+  gap: 2rem;
+  align-items: center;
+}
+
+.heroContent {
+  text-align: left;
+}
+
+.kicker {
+  margin: 0 0 1rem;
+  color: var(--ifm-color-primary);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.heroSubtitle {
+  max-width: 44rem;
+  margin-bottom: 1rem;
+}
+
+.heroBody {
+  max-width: 42rem;
+  margin: 0 0 1.5rem;
+  color: var(--ifm-color-emphasis-700);
+  font-size: 1rem;
+  line-height: 1.7;
+}
+
 @media screen and (max-width: 996px) {
   .heroBanner {
-    padding: 2rem;
+    padding: 2.5rem 0 2rem;
+  }
+
+  .heroGrid {
+    grid-template-columns: 1fr;
   }
 }
 
 .buttons {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.primaryButton,
+.secondaryButton {
+  border-radius: 8px;
+}
+
+.heroMetaRow {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.9rem;
+  margin-top: 1.75rem;
+}
+
+.metaCard {
+  padding: 1rem 1.1rem;
+  border: 1px solid rgba(95, 99, 104, 0.22);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.78);
+  backdrop-filter: blur(12px);
+}
+
+.metaLabel {
+  display: block;
+  margin-bottom: 0.35rem;
+  color: var(--ifm-color-emphasis-600);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.heroConsole {
+  border: 1px solid rgba(95, 99, 104, 0.18);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 28px 80px rgba(32, 33, 36, 0.14);
+  overflow: hidden;
+}
+
+.consoleChrome {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.9rem 1rem;
+  border-bottom: 1px solid rgba(95, 99, 104, 0.16);
+  background: rgba(248, 249, 250, 0.92);
+}
+
+.consoleChrome span {
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 999px;
+  background: rgba(95, 99, 104, 0.35);
+}
+
+.consoleBody {
+  display: grid;
+  grid-template-columns: 168px 1fr;
+  min-height: 320px;
+}
+
+.consoleSidebar {
+  padding: 1rem 0.8rem;
+  border-right: 1px solid rgba(95, 99, 104, 0.14);
+  background: rgba(248, 249, 250, 0.86);
+}
+
+.consoleSidebarItem,
+.consoleSidebarItemActive {
+  padding: 0.75rem 0.9rem;
+  border-radius: 999px;
+  font-size: 0.95rem;
+}
+
+.consoleSidebarItem {
+  color: var(--ifm-color-emphasis-700);
+}
+
+.consoleSidebarItemActive {
+  background: rgba(26, 115, 232, 0.12);
+  color: var(--ifm-color-primary);
+  font-weight: 700;
+}
+
+.consoleMain {
+  padding: 1.2rem;
+  display: grid;
+  gap: 1rem;
+}
+
+.consolePanel {
+  padding: 1.25rem;
+  border-radius: 16px;
+  border: 1px solid rgba(95, 99, 104, 0.16);
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.98),
+    rgba(247, 249, 252, 0.98)
+  );
+}
+
+.consolePanel p {
+  margin: 0.75rem 0 0;
+  color: var(--ifm-color-emphasis-700);
+}
+
+.consolePanelLabel,
+.consoleStatLabel {
+  display: block;
+  margin-bottom: 0.45rem;
+  color: var(--ifm-color-emphasis-600);
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.consoleStats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem;
+}
+
+.consoleStats > div {
+  padding: 1rem 1.05rem;
+  border-radius: 14px;
+  border: 1px solid rgba(95, 99, 104, 0.16);
+  background: rgba(248, 249, 250, 0.84);
+}
+
+[data-theme='dark'] .heroBody,
+[data-theme='dark'] .metaLabel,
+[data-theme='dark'] .consoleSidebarItem,
+[data-theme='dark'] .consolePanel p,
+[data-theme='dark'] .consolePanelLabel,
+[data-theme='dark'] .consoleStatLabel {
+  color: rgba(232, 234, 237, 0.72);
+}
+
+[data-theme='dark'] .metaCard,
+[data-theme='dark'] .heroConsole {
+  border-color: rgba(154, 160, 166, 0.16);
+  background: rgba(32, 33, 36, 0.9);
+}
+
+[data-theme='dark'] .heroConsole {
+  box-shadow: 0 32px 84px rgba(0, 0, 0, 0.3);
+}
+
+[data-theme='dark'] .consoleChrome,
+[data-theme='dark'] .consoleSidebar,
+[data-theme='dark'] .consoleStats > div,
+[data-theme='dark'] .consolePanel {
+  border-color: rgba(154, 160, 166, 0.14);
+}
+
+[data-theme='dark'] .consoleChrome,
+[data-theme='dark'] .consoleSidebar,
+[data-theme='dark'] .consoleStats > div {
+  background: rgba(41, 42, 45, 0.92);
+}
+
+[data-theme='dark'] .consolePanel {
+  background: linear-gradient(
+    180deg,
+    rgba(41, 42, 45, 0.98),
+    rgba(32, 33, 36, 0.98)
+  );
+}
+
+@media screen and (max-width: 996px) {
+  .heroMetaRow,
+  .consoleStats {
+    grid-template-columns: 1fr;
+  }
+
+  .consoleBody {
+    grid-template-columns: 1fr;
+  }
+
+  .consoleSidebar {
+    border-right: 0;
+    border-bottom: 1px solid rgba(95, 99, 104, 0.14);
+  }
 }

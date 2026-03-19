@@ -54,10 +54,13 @@ const config: Config = {
 
   themeConfig: {
     colorMode: {
+      defaultMode: 'dark',
       respectPrefersColorScheme: true,
+      disableSwitch: false,
     },
     navbar: {
       title: 'IDP Docs',
+      hideOnScroll: false,
       logo: {
         alt: 'Internal Developer Portal logo',
         src: 'img/logo.svg',
@@ -77,7 +80,7 @@ const config: Config = {
       ],
     },
     footer: {
-      style: 'dark',
+      style: 'light',
       links: [
         {
           title: 'Docs',

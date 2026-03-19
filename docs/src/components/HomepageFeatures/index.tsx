@@ -11,35 +11,33 @@ type FeatureItem = {
 
 const featureList: FeatureItem[] = [
   {
-    eyebrow: 'Audience',
-    title: 'Developer-Centered UX',
+    eyebrow: 'Application teams',
+    title: 'Docs that speak the product language',
     description: (
       <>
-        The portal is shifting away from infrastructure jargon toward an
-        application-first experience that product teams can navigate without
-        platform translation.
+        The documentation matches the console vocabulary: applications,
+        environments, and operational workflows instead of raw infrastructure
+        internals.
       </>
     ),
   },
   {
-    eyebrow: 'Mental Model',
-    title: 'Platform Abstractions',
+    eyebrow: 'Platform model',
+    title: 'Crossplane details translated into intent',
     description: (
       <>
-        The docs explain how the IDP turns Kubernetes and Crossplane building
-        blocks into application environments, deployment workflows, and shared
-        platform capabilities.
+        The site frames Kubernetes and Crossplane as platform implementation
+        details behind a cleaner application-environment mental model.
       </>
     ),
   },
   {
-    eyebrow: 'Day 2 Operations',
-    title: 'Operational Clarity',
+    eyebrow: 'Operations',
+    title: 'Reference material organized like a console',
     description: (
       <>
-        Architecture, local development, and roadmap guidance are organized for
-        engineers using the portal, not for maintaining a generic documentation
-        template.
+        Architecture, local development, and roadmap content now sit inside a
+        visual system that feels consistent with the main IDP experience.
       </>
     ),
   },
