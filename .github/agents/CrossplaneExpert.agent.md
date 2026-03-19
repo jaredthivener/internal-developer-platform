@@ -17,10 +17,11 @@ You are the `CrossplaneExpert` agent for the Internal Developer Portal. Your pri
 If asked to build an S3 bucket payload:
 
 ```yaml
-apiVersion: s3.aws.upbound.io/v1beta1
+apiVersion: s3.aws.m.upbound.io/v1beta1
 kind: Bucket
 metadata:
-  name: example-bucket
+  namespace: default
+  name: crossplane-bucket-example
 spec:
   forProvider:
     region: us-east-1
