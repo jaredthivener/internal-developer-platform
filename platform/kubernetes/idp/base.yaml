@@ -1,0 +1,72 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: idp-system
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: idp-web
+  namespace: idp-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: idp-web-readonly
+rules:
+  - apiGroups:
+      - apiextensions.crossplane.io
+    resources:
+      - compositions
+      - compositeresourcedefinitions
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - pkg.crossplane.io
+    resources:
+      - providers
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - azure.upbound.io
+      - azure.m.upbound.io
+      - containerservice.azure.upbound.io
+      - dbforpostgresql.azure.upbound.io
+      - network.azure.upbound.io
+      - storage.azure.upbound.io
+    resources:
+      - '*'
+    verbs:
+      - get
+      - list
+      - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: idp-web-readonly
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: idp-web-readonly
+subjects:
+  - kind: ServiceAccount
+    name: idp-web
+    namespace: idp-system
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: idp-web
+  namespace: idp-system
+spec:
+  selector:
+    app.kubernetes.io/name: idp-web
+  ports:
+    - name: http
+      port: 80
+      targetPort: 3000

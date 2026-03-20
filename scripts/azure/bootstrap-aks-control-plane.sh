@@ -1,0 +1,253 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+RESOURCE_GROUP="${RESOURCE_GROUP:-idp-azure-rg}"
+LOCATION="${LOCATION:-westus3}"
+AKS_CLUSTER_NAME="${AKS_CLUSTER_NAME:-idp-aks-auto}"
+CROSSPLANE_SPN_NAME="${CROSSPLANE_SPN_NAME:-${AKS_CLUSTER_NAME}-crossplane}"
+ARM64_POOL_NAME="${ARM64_POOL_NAME:-spotarm64}"
+ARM64_VM_SIZE="${ARM64_VM_SIZE:-Standard_D2pds_v5}"
+ARM64_MIN_COUNT="${ARM64_MIN_COUNT:-1}"
+ARM64_MAX_COUNT="${ARM64_MAX_COUNT:-2}"
+KUBERNETES_VERSION="${KUBERNETES_VERSION:-}"
+SP_OUTPUT_FILE="${SP_OUTPUT_FILE:-.azure/${AKS_CLUSTER_NAME}-crossplane.json}"
+ROTATE_SPN_SECRET="${ROTATE_SPN_SECRET:-false}"
+AZ_MIN_VERSION="2.77.0"
+AKS_PREVIEW_MIN_VERSION="19.0.0b15"
+AKS_PREVIEW_FEATURE="AKS-AutomaticHostedSystemProfilePreview"
+
+log() {
+  printf '\n[%s] %s\n' "$(date '+%H:%M:%S')" "$*"
+}
+
+fail() {
+  printf '\nERROR: %s\n' "$*" >&2
+  exit 1
+}
+
+version_ge() {
+  [[ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n1)" == "$2" ]]
+}
+
+require_az() {
+  command -v az >/dev/null 2>&1 || fail "Azure CLI is required. Install it before running this script."
+
+  local current_version
+  current_version="$(az version --query '"azure-cli"' -o tsv)"
+  version_ge "$current_version" "$AZ_MIN_VERSION" || fail "Azure CLI $AZ_MIN_VERSION or newer is required. Current version: $current_version"
+}
+
+ensure_extension() {
+  local installed_version
+  installed_version="$(az extension show --name aks-preview --query version -o tsv 2>/dev/null || true)"
+
+  if [[ -z "$installed_version" ]]; then
+    log "Installing aks-preview extension"
+    az extension add --name aks-preview >/dev/null
+    installed_version="$(az extension show --name aks-preview --query version -o tsv)"
+  fi
+
+  if ! version_ge "$installed_version" "$AKS_PREVIEW_MIN_VERSION"; then
+    log "Updating aks-preview extension"
+    az extension update --name aks-preview >/dev/null
+  fi
+}
+
+register_prereqs() {
+  log "Registering required resource providers"
+  az provider register --namespace Microsoft.ContainerService >/dev/null
+  az provider register --namespace Microsoft.Network >/dev/null
+  az provider register --namespace Microsoft.Compute >/dev/null
+  az provider register --namespace Microsoft.ManagedIdentity >/dev/null
+
+  log "Ensuring AKS Automatic hosted system preview feature is registered"
+  az feature register \
+    --name "$AKS_PREVIEW_FEATURE" \
+    --namespace Microsoft.ContainerService >/dev/null 2>&1 || true
+
+  local feature_state
+  feature_state="$(az feature show --name "$AKS_PREVIEW_FEATURE" --namespace Microsoft.ContainerService --query properties.state -o tsv 2>/dev/null || true)"
+  if [[ "$feature_state" != "Registered" ]]; then
+    fail "Feature $AKS_PREVIEW_FEATURE is not yet registered. Wait for registration to complete, then run: az provider register --namespace Microsoft.ContainerService"
+  fi
+}
+
+ensure_group() {
+  log "Creating or updating resource group $RESOURCE_GROUP in $LOCATION"
+  az group create --name "$RESOURCE_GROUP" --location "$LOCATION" --output none
+}
+
+ensure_supported_vm_size() {
+  log "Checking Arm64 SKU availability for $ARM64_VM_SIZE in $LOCATION"
+  local available
+  available="$(az vm list-skus --location "$LOCATION" --resource-type virtualMachines --query "[?name=='$ARM64_VM_SIZE'].name | [0]" -o tsv)"
+  [[ "$available" == "$ARM64_VM_SIZE" ]] || fail "VM size $ARM64_VM_SIZE is not available in $LOCATION for this subscription. Set ARM64_VM_SIZE or LOCATION to a supported combination."
+}
+
+ensure_crossplane_spn() {
+  local existing_app_id existing_object_id role_scope
+  role_scope="/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RESOURCE_GROUP"
+
+  existing_app_id="$(az ad sp list --display-name "$CROSSPLANE_SPN_NAME" --query '[0].appId' -o tsv 2>/dev/null || true)"
+
+  if [[ -z "$existing_app_id" ]]; then
+    log "Creating service principal $CROSSPLANE_SPN_NAME for Crossplane or platform automation"
+    read -r CROSSPLANE_APP_ID CROSSPLANE_PASSWORD CROSSPLANE_TENANT <<< "$(az ad sp create-for-rbac \
+      --name "$CROSSPLANE_SPN_NAME" \
+      --skip-assignment \
+      --query '[appId,password,tenant]' \
+      -o tsv)"
+  else
+    CROSSPLANE_APP_ID="$existing_app_id"
+    CROSSPLANE_TENANT="$(az account show --query tenantId -o tsv)"
+
+    if [[ "$ROTATE_SPN_SECRET" == "true" ]]; then
+      log "Rotating client secret for existing service principal $CROSSPLANE_SPN_NAME"
+      CROSSPLANE_PASSWORD="$(az ad app credential reset --id "$CROSSPLANE_APP_ID" --query password -o tsv)"
+    else
+      CROSSPLANE_PASSWORD=""
+      log "Service principal $CROSSPLANE_SPN_NAME already exists. Keeping the current secret unchanged."
+    fi
+  fi
+
+  existing_object_id="$(az ad sp show --id "$CROSSPLANE_APP_ID" --query id -o tsv)"
+
+  if [[ "$(az role assignment list --assignee "$CROSSPLANE_APP_ID" --scope "$role_scope" --query "[?roleDefinitionName=='Contributor'] | length(@)" -o tsv)" == "0" ]]; then
+    log "Assigning Contributor on $role_scope to service principal"
+    az role assignment create \
+      --assignee-object-id "$existing_object_id" \
+      --assignee-principal-type ServicePrincipal \
+      --role Contributor \
+      --scope "$role_scope" >/dev/null
+  fi
+
+  if [[ -n "$SP_OUTPUT_FILE" && -n "$CROSSPLANE_PASSWORD" ]]; then
+    mkdir -p "$(dirname "$SP_OUTPUT_FILE")"
+    umask 177
+    cat > "$SP_OUTPUT_FILE" <<EOF
+{
+  "clientId": "$CROSSPLANE_APP_ID",
+  "clientSecret": "$CROSSPLANE_PASSWORD",
+  "tenantId": "$CROSSPLANE_TENANT",
+  "subscriptionId": "$SUBSCRIPTION_ID"
+}
+EOF
+    log "Wrote service principal credentials to $SP_OUTPUT_FILE"
+  elif [[ -n "$SP_OUTPUT_FILE" ]]; then
+    log "SP_OUTPUT_FILE is set to $SP_OUTPUT_FILE, but no new secret was generated. Set ROTATE_SPN_SECRET=true if you need a fresh Crossplane credentials file."
+  fi
+}
+
+create_aks_cluster() {
+  if az aks show --resource-group "$RESOURCE_GROUP" --name "$AKS_CLUSTER_NAME" --output none >/dev/null 2>&1; then
+    log "AKS cluster $AKS_CLUSTER_NAME already exists"
+    return
+  fi
+
+  log "Creating AKS Automatic cluster $AKS_CLUSTER_NAME"
+  local cmd=(
+    az aks create
+    --resource-group "$RESOURCE_GROUP"
+    --name "$AKS_CLUSTER_NAME"
+    --location "$LOCATION"
+    --sku automatic
+    --enable-hosted-system
+    --enable-oidc-issuer
+    --enable-workload-identity
+    --generate-ssh-keys
+    --output table
+  )
+
+  if [[ -n "$KUBERNETES_VERSION" ]]; then
+    cmd+=(--kubernetes-version "$KUBERNETES_VERSION")
+  fi
+
+  "${cmd[@]}"
+}
+
+ensure_spot_pool() {
+  if az aks nodepool show \
+    --resource-group "$RESOURCE_GROUP" \
+    --cluster-name "$AKS_CLUSTER_NAME" \
+    --name "$ARM64_POOL_NAME" \
+    --output none >/dev/null 2>&1; then
+    log "AKS node pool $ARM64_POOL_NAME already exists"
+    return
+  fi
+
+  log "Adding low-cost Arm64 Spot node pool $ARM64_POOL_NAME"
+  az aks nodepool add \
+    --resource-group "$RESOURCE_GROUP" \
+    --cluster-name "$AKS_CLUSTER_NAME" \
+    --name "$ARM64_POOL_NAME" \
+    --node-vm-size "$ARM64_VM_SIZE" \
+    --priority Spot \
+    --eviction-policy Delete \
+    --spot-max-price -1 \
+    --enable-cluster-autoscaler \
+    --min-count "$ARM64_MIN_COUNT" \
+    --max-count "$ARM64_MAX_COUNT" \
+    --mode User \
+    --labels workload=platform architecture=arm64 cost=spot \
+    --output table
+}
+
+assign_cluster_access() {
+  local aks_id current_user_id
+  aks_id="$(az aks show --resource-group "$RESOURCE_GROUP" --name "$AKS_CLUSTER_NAME" --query id -o tsv)"
+  current_user_id="$(az ad signed-in-user show --query id -o tsv 2>/dev/null || true)"
+
+  if [[ -z "$current_user_id" ]]; then
+    log "Skipping AKS RBAC assignment for the signed-in user because no user object ID was detected."
+    return
+  fi
+
+  if [[ "$(az role assignment list --assignee "$current_user_id" --scope "$aks_id" --query "[?roleDefinitionName=='Azure Kubernetes Service RBAC Cluster Admin'] | length(@)" -o tsv)" == "0" ]]; then
+    log "Assigning Azure Kubernetes Service RBAC Cluster Admin to the signed-in user"
+    az role assignment create \
+      --assignee-object-id "$current_user_id" \
+      --assignee-principal-type User \
+      --role "Azure Kubernetes Service RBAC Cluster Admin" \
+      --scope "$aks_id" >/dev/null
+  fi
+}
+
+get_credentials() {
+  log "Fetching kubeconfig for $AKS_CLUSTER_NAME"
+  az aks get-credentials \
+    --resource-group "$RESOURCE_GROUP" \
+    --name "$AKS_CLUSTER_NAME" \
+    --overwrite-existing >/dev/null
+
+  if command -v kubectl >/dev/null 2>&1; then
+    kubectl create namespace crossplane-system --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+    kubectl create namespace idp-system --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+    log "Ensured namespaces crossplane-system and idp-system exist"
+  else
+    log "kubectl is not installed. Skipping namespace bootstrap."
+  fi
+}
+
+main() {
+  require_az
+  ensure_extension
+
+  SUBSCRIPTION_ID="$(az account show --query id -o tsv)"
+
+  register_prereqs
+  ensure_group
+  ensure_supported_vm_size
+  ensure_crossplane_spn
+  create_aks_cluster
+  ensure_spot_pool
+  assign_cluster_access
+  get_credentials
+
+  log "Bootstrap complete"
+  log "Resource group: $RESOURCE_GROUP"
+  log "AKS cluster: $AKS_CLUSTER_NAME"
+  log "Crossplane service principal appId: $CROSSPLANE_APP_ID"
+}
+
+main "$@"

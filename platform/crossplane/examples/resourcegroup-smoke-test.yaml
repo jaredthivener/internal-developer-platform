@@ -1,0 +1,10 @@
+apiVersion: azure.upbound.io/v1beta1
+kind: ResourceGroup
+metadata:
+  name: idp-crossplane-smoke
+spec:
+  forProvider:
+    location: LOCATION_PLACEHOLDER
+  providerConfigRef:
+    kind: ClusterProviderConfig
+    name: default

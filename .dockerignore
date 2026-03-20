@@ -1,0 +1,16 @@
+node_modules
+.next
+coverage
+docs
+.git
+.github
+.husky
+.azure
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.DS_Store
+*.tsbuildinfo
+vitest.config.ts
+vitest.setup.ts
+src/__tests__

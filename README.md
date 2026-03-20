@@ -25,6 +25,53 @@ A highly opinionated, secure, and developer-friendly IDP built with Next.js, Rea
 - Static docs build: `npm run docs:build`
 - Public docs site: GitHub Pages is configured to publish the Docusaurus site from GitHub Actions.
 
+## Azure Bootstrap
+
+Use the AKS bootstrap script to stand up a low-cost Azure control-plane environment for the IDP and Crossplane:
+
+```bash
+bash scripts/azure/bootstrap-aks-control-plane.sh
+```
+
+What the script does:
+
+- Creates a resource group in a supported AKS Automatic region.
+- Creates a service principal intended for Crossplane or platform automation credentials.
+- Assigns scoped RBAC roles for resource provisioning and AKS access.
+- Creates an AKS Automatic cluster with hosted system pools, OIDC issuer, and workload identity enabled.
+- Adds a low-cost Arm64 Spot user node pool for non-critical workloads.
+- Writes a Crossplane-ready service principal credentials file to `.azure/<cluster-name>-crossplane.json` by default.
+
+Important:
+
+- AKS itself uses managed identity. The generated service principal is for Crossplane or other platform automation, not the cluster identity.
+- Managed system capacity remains on the hosted automatic/system side. The Arm64 Spot pool is for cheaper workload scheduling and should not be the only capacity for critical recovery paths.
+- AKS Automatic hosted system node pools are currently preview and region-limited. The script validates the Azure CLI prereqs and preview feature registration before cluster creation.
+
+## AKS Deployment
+
+After the cluster exists, deploy Crossplane and the IDP app with:
+
+```bash
+bash scripts/azure/deploy-platform-to-aks.sh
+```
+
+What the deploy script does:
+
+- Creates or reuses a Basic ACR and attaches it to the AKS cluster.
+- Builds the Next.js app as a standalone container image and pushes it to ACR.
+- Installs Crossplane with Helm into `crossplane-system`.
+- Installs the Azure provider family packages needed for resource groups, networking, storage, PostgreSQL, and AKS.
+- Creates the Azure provider secret from the bootstrap-generated service principal JSON file.
+- Applies a cluster-scoped Crossplane `ClusterProviderConfig` and a smoke-test `ResourceGroup` example.
+- Creates the `idp-system` namespace resources and deploys the app.
+
+Starter assumptions:
+
+- The script expects a real app env file at `.env.local` by default.
+- For an initial cluster-local setup, keep `NEXTAUTH_URL=http://localhost:3000` and access the app with `kubectl -n idp-system port-forward svc/idp-web 3000:80`.
+- The shipped starter RBAC for the app is read-only against Crossplane and Azure managed resources. If you re-enable write flows in the UI, expand the service account permissions deliberately instead of broadening them blindly.
+
 ## Getting Started
 
 ### 1. Prerequisites
@@ -64,7 +111,7 @@ The documentation site runs from the nested Docusaurus workspace in [docs](./doc
 
 ## Roadmap
 
-- Expand the application environment model so developers see EKS, storage, networking, and databases as one cohesive platform view.
+- Expand the application environment model so developers see AKS, storage, networking, and databases as one cohesive platform view.
 - Add richer operational workflows and status visibility for platform-managed resources.
 - Document architecture, local setup, deployment, and product concepts in the Docusaurus site.
 - Add screenshots and usage guides as the public docs mature.

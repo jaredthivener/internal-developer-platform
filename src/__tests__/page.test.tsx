@@ -2,29 +2,28 @@ import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import Home from '@/app/page';
 
-vi.mock('@/components/features/crossplane/CompositionList', () => ({
-  default: () => <div>Application Environments</div>,
+vi.mock('@/components/features/catalog/CloudEstateOverview', () => ({
+  default: () => <div>Cloud Estate Overview</div>,
 }));
 
-vi.mock('@/components/features/crossplane/ResourceProvisioner', () => ({
-  default: () => <div>Provision Application Base</div>,
+vi.mock('@/components/features/catalog/CloudResourceCatalog', () => ({
+  default: () => <div>Azure Resource Catalog</div>,
 }));
 
 describe('Home Page', () => {
-  it('renders the portal title', () => {
+  it('renders the estate title', () => {
     render(<Home />);
 
-    // Check if the primary title is rendered
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(
-      'Dashboard'
+      'Cloud Estate'
     );
   });
 
-  it('renders a welcome message', () => {
+  it('renders the estate summary message', () => {
     render(<Home />);
     expect(
       screen.getByText(
-        /Manage your application environments and self-service deployments/i
+        /explore the platform-owned azure estate through a clean catalog view/i
       )
     ).toBeInTheDocument();
   });

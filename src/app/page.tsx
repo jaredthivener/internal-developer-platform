@@ -1,40 +1,45 @@
-import { Box, Typography, Grid } from '@mui/material';
-import CompositionList from '@/components/features/crossplane/CompositionList';
-import ResourceProvisioner from '@/components/features/crossplane/ResourceProvisioner';
+import { Box, Stack, Typography } from '@mui/material';
+import CloudEstateOverview from '@/components/features/catalog/CloudEstateOverview';
+import CloudResourceCatalog from '@/components/features/catalog/CloudResourceCatalog';
 
 export default function Home() {
   return (
-    <Box sx={{ maxWidth: 1200, margin: '0 auto', width: '100%' }}>
+    <Box sx={{ maxWidth: 1440, margin: '0 auto', width: '100%' }}>
       <Box
         sx={{
-          mb: 4,
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'flex-end',
+          mb: 4.5,
+          px: { xs: 0.5, md: 0 },
         }}
       >
-        <Box>
+        <Stack spacing={1.25}>
           <Typography
-            variant="h4"
+            variant="h3"
             component="h1"
-            sx={{ fontWeight: 600, color: 'text.primary', mb: 1 }}
+            sx={{
+              fontWeight: 600,
+              color: 'text.primary',
+              letterSpacing: '-0.03em',
+            }}
           >
-            Dashboard
+            Cloud Estate
           </Typography>
-          <Typography variant="body1" color="text.secondary">
-            Manage your application environments and self-service deployments
+          <Typography
+            variant="body1"
+            color="text.secondary"
+            sx={{ maxWidth: 840 }}
+          >
+            Explore the platform-owned Azure estate through a clean catalog
+            view. Track service inventory, cost drift, security posture, and
+            operating health without turning the dashboard into a resource
+            creation screen.
           </Typography>
-        </Box>
+        </Stack>
       </Box>
 
-      <Grid container spacing={3}>
-        <Grid size={{ xs: 12, md: 8 }}>
-          <CompositionList />
-        </Grid>
-        <Grid size={{ xs: 12, md: 4 }}>
-          <ResourceProvisioner />
-        </Grid>
-      </Grid>
+      <Stack spacing={3}>
+        <CloudEstateOverview />
+        <CloudResourceCatalog />
+      </Stack>
     </Box>
   );
 }
