@@ -1,0 +1,18 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: idp-web
+  namespace: idp-system
+spec:
+  ingressClassName: INGRESS_CLASS_NAME_PLACEHOLDER
+  rules:
+    - host: INGRESS_HOST_PLACEHOLDER
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: idp-web
+                port:
+                  number: 80

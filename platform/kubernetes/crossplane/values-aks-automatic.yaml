@@ -1,0 +1,7 @@
+podSecurityContextCrossplane:
+  seccompProfile:
+    type: RuntimeDefault
+
+podSecurityContextRBACManager:
+  seccompProfile:
+    type: RuntimeDefault

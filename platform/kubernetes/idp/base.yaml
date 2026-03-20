@@ -58,6 +58,35 @@ subjects:
     name: idp-web
     namespace: idp-system
 ---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: idp-web-storage-account-writer
+rules:
+  - apiGroups:
+      - storage.azure.upbound.io
+    resources:
+      - accounts
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: idp-web-storage-account-writer
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: idp-web-storage-account-writer
+subjects:
+  - kind: ServiceAccount
+    name: idp-web
+    namespace: idp-system
+---
 apiVersion: v1
 kind: Service
 metadata:

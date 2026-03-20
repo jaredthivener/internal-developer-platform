@@ -60,6 +60,27 @@ describe('GET /api/crossplane/compositions', () => {
     expect(body.error).toBe('Internal Server Error');
   });
 
+  it('should return mocked data when offline mode is enabled', async () => {
+    const originalFlag = process.env.IDP_ALLOW_OFFLINE_K8S;
+    process.env.IDP_ALLOW_OFFLINE_K8S = 'true';
+
+    const req = new NextRequest(
+      'http://localhost:3000/api/crossplane/compositions'
+    );
+    const res = await GET(req);
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.data.length).toBeGreaterThan(0);
+    expect(getCustomObjectsApi).not.toHaveBeenCalled();
+
+    if (originalFlag === undefined) {
+      delete process.env.IDP_ALLOW_OFFLINE_K8S;
+    } else {
+      process.env.IDP_ALLOW_OFFLINE_K8S = originalFlag;
+    }
+  });
+
   it('should return 200 with sanitized data on success', async () => {
     vi.mocked(getServerSession).mockResolvedValueOnce({
       user: { name: 'Test User' },

@@ -1,0 +1,19 @@
+apiVersion: storage.azure.upbound.io/v1beta1
+kind: Account
+metadata:
+  name: STORAGE_ACCOUNT_NAME_PLACEHOLDER
+spec:
+  providerConfigRef:
+    name: default
+  forProvider:
+    location: LOCATION_PLACEHOLDER
+    resourceGroupName: RESOURCE_GROUP_PLACEHOLDER
+    accountKind: StorageV2
+    accountTier: Standard
+    accountReplicationType: LRS
+    accessTier: Hot
+    minTlsVersion: TLS1_2
+    allowNestedItemsToBePublic: false
+    sharedAccessKeyEnabled: true
+    publicNetworkAccessEnabled: true
+    infrastructureEncryptionEnabled: true

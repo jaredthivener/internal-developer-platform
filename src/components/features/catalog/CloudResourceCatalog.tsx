@@ -1,8 +1,8 @@
 'use client';
 
-import React from 'react';
 import {
   Box,
+  Button,
   Card,
   CardContent,
   Chip,
@@ -12,6 +12,7 @@ import {
   Stack,
   Typography,
 } from '@mui/material';
+import Link from 'next/link';
 import HubOutlinedIcon from '@mui/icons-material/HubOutlined';
 import StorageRoundedIcon from '@mui/icons-material/StorageRounded';
 import DnsRoundedIcon from '@mui/icons-material/DnsRounded';
@@ -32,6 +33,8 @@ const catalogEntries = [
     security: 'OIDC and workload identity enabled',
     health: 91,
     icon: <HubOutlinedIcon fontSize="small" />,
+    actionLabel: 'Coming soon',
+    href: null,
   },
   {
     name: 'Azure Storage',
@@ -45,6 +48,8 @@ const catalogEntries = [
     security: '100% encryption with soft delete',
     health: 95,
     icon: <StorageRoundedIcon fontSize="small" />,
+    actionLabel: 'Open Azure Storage Workflow',
+    href: '/catalog/azure-storage',
   },
   {
     name: 'Azure Database for PostgreSQL',
@@ -58,6 +63,8 @@ const catalogEntries = [
     security: 'Private access on 2 of 3 servers',
     health: 84,
     icon: <DnsRoundedIcon fontSize="small" />,
+    actionLabel: 'Coming soon',
+    href: null,
   },
   {
     name: 'Azure Virtual Network',
@@ -71,6 +78,8 @@ const catalogEntries = [
     security: '96% NSG policy compliance',
     health: 97,
     icon: <DeviceHubRoundedIcon fontSize="small" />,
+    actionLabel: 'Coming soon',
+    href: null,
   },
 ];
 
@@ -107,8 +116,15 @@ export default function CloudResourceCatalog() {
             <Stack spacing={3}>
               <Box>
                 <Typography
-                  variant="h5"
+                  variant="overline"
                   component="h2"
+                  sx={{ letterSpacing: '0.12em', color: 'text.secondary' }}
+                >
+                  Catalog
+                </Typography>
+                <Typography
+                  variant="h5"
+                  component="h3"
                   sx={{ fontWeight: 600 }}
                 >
                   Azure Resource Catalog
@@ -120,163 +136,199 @@ export default function CloudResourceCatalog() {
                 >
                   Browse platform-owned services by control plane area, see
                   where they operate, and understand current cost, posture, and
-                  health before opening a detailed service view.
+                  health before opening a resource workflow.
                 </Typography>
               </Box>
 
               <Grid container spacing={2}>
-                {catalogEntries.map((entry) => (
-                  <Grid key={entry.name} size={{ xs: 12, md: 6 }}>
-                    <Box
-                      sx={{
-                        p: 2.5,
-                        borderRadius: 3,
-                        border: '1px solid',
-                        borderColor: 'divider',
-                        minHeight: 248,
-                        display: 'flex',
-                        flexDirection: 'column',
-                        justifyContent: 'space-between',
-                      }}
-                    >
-                      <Stack spacing={2.5}>
-                        <Stack
-                          direction="row"
-                          justifyContent="space-between"
-                          spacing={2}
-                        >
+                {catalogEntries.map((entry) => {
+                  const isWorkflowAvailable = Boolean(entry.href);
+
+                  return (
+                    <Grid key={entry.name} size={{ xs: 12, md: 6 }}>
+                      <Box
+                        sx={{
+                          p: 2.5,
+                          borderRadius: 3,
+                          border: '1px solid',
+                          borderColor: 'divider',
+                          minHeight: 248,
+                          display: 'flex',
+                          flexDirection: 'column',
+                          justifyContent: 'space-between',
+                        }}
+                      >
+                        <Stack spacing={2.5}>
                           <Stack
                             direction="row"
-                            spacing={1.5}
-                            alignItems="center"
+                            justifyContent="space-between"
+                            spacing={2}
                           >
-                            <Box
-                              sx={{
-                                width: 36,
-                                height: 36,
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                borderRadius: 2,
-                                color: 'primary.main',
-                                backgroundColor: 'rgba(138, 180, 248, 0.14)',
-                              }}
+                            <Stack
+                              direction="row"
+                              spacing={1.5}
+                              alignItems="center"
                             >
-                              {entry.icon}
-                            </Box>
-                            <Box>
-                              <Typography
-                                variant="h6"
-                                component="h3"
-                                sx={{ fontWeight: 600 }}
+                              <Box
+                                sx={{
+                                  width: 36,
+                                  height: 36,
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  borderRadius: 2,
+                                  color: 'primary.main',
+                                  backgroundColor: 'rgba(138, 180, 248, 0.14)',
+                                }}
                               >
-                                {entry.name}
+                                {entry.icon}
+                              </Box>
+                              <Box>
+                                <Typography
+                                  variant="h6"
+                                  component="h4"
+                                  sx={{ fontWeight: 600 }}
+                                >
+                                  {entry.name}
+                                </Typography>
+                                <Typography
+                                  variant="body2"
+                                  color="text.secondary"
+                                >
+                                  {entry.category}
+                                </Typography>
+                              </Box>
+                            </Stack>
+                            <Chip
+                              label={entry.owner}
+                              size="small"
+                              variant="outlined"
+                            />
+                          </Stack>
+
+                          <Typography variant="body2" color="text.secondary">
+                            {entry.summary}
+                          </Typography>
+
+                          <Grid container spacing={1.5}>
+                            <Grid size={{ xs: 6 }}>
+                              <Typography
+                                variant="caption"
+                                color="text.secondary"
+                              >
+                                Estate size
                               </Typography>
                               <Typography
                                 variant="body2"
+                                sx={{ fontWeight: 600 }}
+                              >
+                                {entry.services}
+                              </Typography>
+                            </Grid>
+                            <Grid size={{ xs: 6 }}>
+                              <Typography
+                                variant="caption"
                                 color="text.secondary"
                               >
-                                {entry.category}
+                                Regions
                               </Typography>
-                            </Box>
-                          </Stack>
-                          <Chip
-                            label={entry.owner}
-                            size="small"
-                            variant="outlined"
-                          />
+                              <Typography
+                                variant="body2"
+                                sx={{ fontWeight: 600 }}
+                              >
+                                {entry.regions}
+                              </Typography>
+                            </Grid>
+                            <Grid size={{ xs: 6 }}>
+                              <Typography
+                                variant="caption"
+                                color="text.secondary"
+                              >
+                                Monthly cost
+                              </Typography>
+                              <Typography
+                                variant="body2"
+                                sx={{ fontWeight: 600 }}
+                              >
+                                {entry.monthlyCost}
+                              </Typography>
+                            </Grid>
+                            <Grid size={{ xs: 6 }}>
+                              <Typography
+                                variant="caption"
+                                color="text.secondary"
+                              >
+                                Security
+                              </Typography>
+                              <Typography
+                                variant="body2"
+                                sx={{ fontWeight: 600 }}
+                              >
+                                {entry.security}
+                              </Typography>
+                            </Grid>
+                          </Grid>
                         </Stack>
 
-                        <Typography variant="body2" color="text.secondary">
-                          {entry.summary}
-                        </Typography>
+                        <Stack spacing={2} sx={{ mt: 2.5 }}>
+                          <Box>
+                            <Stack
+                              direction="row"
+                              justifyContent="space-between"
+                              sx={{ mb: 1 }}
+                            >
+                              <Typography
+                                variant="caption"
+                                color="text.secondary"
+                              >
+                                Operational health
+                              </Typography>
+                              <Typography
+                                variant="caption"
+                                color="text.secondary"
+                              >
+                                {entry.health}%
+                              </Typography>
+                            </Stack>
+                            <LinearProgress
+                              variant="determinate"
+                              value={entry.health}
+                              sx={{
+                                height: 8,
+                                borderRadius: 999,
+                                backgroundColor: 'action.hover',
+                              }}
+                            />
+                          </Box>
 
-                        <Grid container spacing={1.5}>
-                          <Grid size={{ xs: 6 }}>
-                            <Typography
-                              variant="caption"
-                              color="text.secondary"
-                            >
-                              Estate size
-                            </Typography>
-                            <Typography
-                              variant="body2"
-                              sx={{ fontWeight: 600 }}
-                            >
-                              {entry.services}
-                            </Typography>
-                          </Grid>
-                          <Grid size={{ xs: 6 }}>
-                            <Typography
-                              variant="caption"
-                              color="text.secondary"
-                            >
-                              Regions
-                            </Typography>
-                            <Typography
-                              variant="body2"
-                              sx={{ fontWeight: 600 }}
-                            >
-                              {entry.regions}
-                            </Typography>
-                          </Grid>
-                          <Grid size={{ xs: 6 }}>
-                            <Typography
-                              variant="caption"
-                              color="text.secondary"
-                            >
-                              Monthly cost
-                            </Typography>
-                            <Typography
-                              variant="body2"
-                              sx={{ fontWeight: 600 }}
-                            >
-                              {entry.monthlyCost}
-                            </Typography>
-                          </Grid>
-                          <Grid size={{ xs: 6 }}>
-                            <Typography
-                              variant="caption"
-                              color="text.secondary"
-                            >
-                              Security
-                            </Typography>
-                            <Typography
-                              variant="body2"
-                              sx={{ fontWeight: 600 }}
-                            >
-                              {entry.security}
-                            </Typography>
-                          </Grid>
-                        </Grid>
-                      </Stack>
-
-                      <Box sx={{ mt: 2.5 }}>
-                        <Stack
-                          direction="row"
-                          justifyContent="space-between"
-                          sx={{ mb: 1 }}
-                        >
-                          <Typography variant="caption" color="text.secondary">
-                            Operational health
-                          </Typography>
-                          <Typography variant="caption" color="text.secondary">
-                            {entry.health}%
-                          </Typography>
+                          <Box>
+                            {entry.href ? (
+                              <Button
+                                fullWidth
+                                component={Link}
+                                href={entry.href}
+                                variant="contained"
+                                disableElevation
+                                aria-label={entry.actionLabel}
+                              >
+                                {entry.actionLabel}
+                              </Button>
+                            ) : (
+                              <Button
+                                fullWidth
+                                variant="outlined"
+                                disabled={!isWorkflowAvailable}
+                                aria-label={entry.actionLabel}
+                              >
+                                {entry.actionLabel}
+                              </Button>
+                            )}
+                          </Box>
                         </Stack>
-                        <LinearProgress
-                          variant="determinate"
-                          value={entry.health}
-                          sx={{
-                            height: 8,
-                            borderRadius: 999,
-                            backgroundColor: 'action.hover',
-                          }}
-                        />
                       </Box>
-                    </Box>
-                  </Grid>
-                ))}
+                    </Grid>
+                  );
+                })}
               </Grid>
             </Stack>
           </CardContent>

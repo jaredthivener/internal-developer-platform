@@ -14,8 +14,11 @@ spec:
         app.kubernetes.io/name: idp-web
     spec:
       serviceAccountName: idp-web
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       nodeSelector:
-        kubernetes.io/arch: arm64
+        kubernetes.io/arch: ARCH_PLACEHOLDER
         kubernetes.io/os: linux
       containers:
         - name: idp-web

@@ -6,10 +6,6 @@ vi.mock('@/components/features/catalog/CloudEstateOverview', () => ({
   default: () => <div>Cloud Estate Overview</div>,
 }));
 
-vi.mock('@/components/features/catalog/CloudResourceCatalog', () => ({
-  default: () => <div>Azure Resource Catalog</div>,
-}));
-
 describe('Home Page', () => {
   it('renders the estate title', () => {
     render(<Home />);
@@ -26,5 +22,14 @@ describe('Home Page', () => {
         /explore the platform-owned azure estate through a clean catalog view/i
       )
     ).toBeInTheDocument();
+  });
+
+  it('links from the home page to the catalog route', () => {
+    render(<Home />);
+
+    expect(screen.getByRole('link', { name: /open catalog/i })).toHaveAttribute(
+      'href',
+      '/catalog'
+    );
   });
 });

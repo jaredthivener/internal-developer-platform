@@ -16,20 +16,57 @@ import {
   Typography,
   Divider,
 } from '@mui/material';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import MenuIcon from '@mui/icons-material/Menu';
 import AppsIcon from '@mui/icons-material/Apps';
-import CloudQueueIcon from '@mui/icons-material/CloudQueue';
 import SettingsIcon from '@mui/icons-material/Settings';
 import CodeIcon from '@mui/icons-material/Code';
+import GridViewRoundedIcon from '@mui/icons-material/GridViewRounded';
+import StorageRoundedIcon from '@mui/icons-material/StorageRounded';
 import Brightness4Icon from '@mui/icons-material/Brightness4';
 import Brightness7Icon from '@mui/icons-material/Brightness7';
 import { ThemeModeContext } from '@/app/Providers';
 
 const drawerWidth = 260;
 
+const navigationItems = [
+  {
+    label: 'Dashboard',
+    href: '/',
+    icon: <AppsIcon />,
+    matchesPath: (pathname: string) => pathname === '/',
+  },
+  {
+    label: 'Catalog',
+    href: '/catalog',
+    icon: <GridViewRoundedIcon />,
+    matchesPath: (pathname: string) => pathname.startsWith('/catalog'),
+  },
+  {
+    label: 'Applications',
+    href: '/applications',
+    icon: <CodeIcon />,
+    matchesPath: (pathname: string) => pathname.startsWith('/applications'),
+  },
+  {
+    label: 'Resources',
+    href: '/resources',
+    icon: <StorageRoundedIcon />,
+    matchesPath: (pathname: string) => pathname.startsWith('/resources'),
+  },
+  {
+    label: 'Settings',
+    href: '/settings',
+    icon: <SettingsIcon />,
+    matchesPath: (pathname: string) => pathname.startsWith('/settings'),
+  },
+];
+
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const colorMode = useContext(ThemeModeContext);
+  const pathname = usePathname();
 
   const handleDrawerToggle = () => {
     setMobileOpen(!mobileOpen);
@@ -50,11 +87,19 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       </Toolbar>
       <Divider />
       <List sx={{ pt: 2 }}>
-        {['Dashboard', 'Applications', 'Resources', 'Settings'].map(
-          (text, index) => (
-            <ListItem key={text} disablePadding>
+        {navigationItems.map((item) => {
+          const isSelected = item.matchesPath
+            ? item.matchesPath(pathname)
+            : false;
+
+          return (
+            <ListItem key={item.label} disablePadding>
               <ListItemButton
-                selected={index === 0}
+                component={item.href ? Link : 'button'}
+                href={item.href}
+                selected={isSelected}
+                aria-current={isSelected ? 'page' : undefined}
+                disabled={!item.href}
                 sx={{
                   borderRadius: '0 24px 24px 0',
                   mr: 2,
@@ -69,24 +114,16 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 }}
               >
                 <ListItemIcon sx={{ minWidth: 40, color: 'text.secondary' }}>
-                  {index === 0 ? (
-                    <AppsIcon />
-                  ) : index === 1 ? (
-                    <CodeIcon />
-                  ) : index === 2 ? (
-                    <CloudQueueIcon />
-                  ) : (
-                    <SettingsIcon />
-                  )}
+                  {item.icon}
                 </ListItemIcon>
                 <ListItemText
-                  primary={text}
+                  primary={item.label}
                   primaryTypographyProps={{ fontSize: 14, fontWeight: 500 }}
                 />
               </ListItemButton>
             </ListItem>
-          )
-        )}
+          );
+        })}
       </List>
     </div>
   );

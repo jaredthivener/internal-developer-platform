@@ -69,12 +69,12 @@ describe('POST /api/crossplane/resources', () => {
     expect(res.status).toBe(201);
     const body = await res.json();
 
-    expect(mockCreateClusterCustomObject).toHaveBeenCalledWith(
-      's3.aws.m.upbound.io',
-      'v1beta1',
-      'buckets',
-      mockPayload.payload
-    );
+    expect(mockCreateClusterCustomObject).toHaveBeenCalledWith({
+      group: 's3.aws.m.upbound.io',
+      version: 'v1beta1',
+      plural: 'buckets',
+      body: mockPayload.payload,
+    });
 
     expect(body.data.metadata.name).toBe('test-bucket-123');
   });

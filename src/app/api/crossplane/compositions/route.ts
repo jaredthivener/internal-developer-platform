@@ -1,8 +1,31 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCustomObjectsApi } from '@/lib/crossplane/client';
+import { shouldUseCrossplaneMockMode } from '@/lib/crossplane/offlineMode';
 
 export async function GET(req?: NextRequest) {
   void req;
+
+  if (shouldUseCrossplaneMockMode()) {
+    return NextResponse.json(
+      {
+        data: [
+          {
+            metadata: { name: 'cluster-aws-s3-production' },
+            spec: { compositeTypeRef: { kind: 'XBucket' } },
+          },
+          {
+            metadata: { name: 'cluster-gcp-postgres-dev' },
+            spec: { compositeTypeRef: { kind: 'XPostgreSQLInstance' } },
+          },
+          {
+            metadata: { name: 'cluster-azure-redis' },
+            spec: { compositeTypeRef: { kind: 'XRedisCache' } },
+          },
+        ],
+      },
+      { status: 200 }
+    );
+  }
 
   try {
     // 1. Authentication Check (Bypassed for Dev/MVP Core functionality phase)
@@ -36,29 +59,6 @@ export async function GET(req?: NextRequest) {
       '[API] GET /api/crossplane/compositions - Error fetching compositions:',
       error
     );
-
-    // Provide a mocked fallback for Local MVP UI demonstrations when K8s isn't accessible
-    if (process.env.NODE_ENV === 'development') {
-      return NextResponse.json(
-        {
-          data: [
-            {
-              metadata: { name: 'cluster-aws-s3-production' },
-              spec: { compositeTypeRef: { kind: 'XBucket' } },
-            },
-            {
-              metadata: { name: 'cluster-gcp-postgres-dev' },
-              spec: { compositeTypeRef: { kind: 'XPostgreSQLInstance' } },
-            },
-            {
-              metadata: { name: 'cluster-azure-redis' },
-              spec: { compositeTypeRef: { kind: 'XRedisCache' } },
-            },
-          ],
-        },
-        { status: 200 }
-      );
-    }
 
     // 4. Secure Exception Handling (OWASP Top 10: Security Misconfiguration)
     // Avoid leaking stack traces and Kubernetes API connection paths/tokens to the frontend

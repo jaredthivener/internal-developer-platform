@@ -10,12 +10,14 @@ ARM64_POOL_NAME="${ARM64_POOL_NAME:-spotarm64}"
 ARM64_VM_SIZE="${ARM64_VM_SIZE:-Standard_D2pds_v5}"
 ARM64_MIN_COUNT="${ARM64_MIN_COUNT:-1}"
 ARM64_MAX_COUNT="${ARM64_MAX_COUNT:-2}"
-KUBERNETES_VERSION="${KUBERNETES_VERSION:-}"
+KUBERNETES_VERSION="${KUBERNETES_VERSION:-1.34}"
 SP_OUTPUT_FILE="${SP_OUTPUT_FILE:-.azure/${AKS_CLUSTER_NAME}-crossplane.json}"
 ROTATE_SPN_SECRET="${ROTATE_SPN_SECRET:-false}"
 AZ_MIN_VERSION="2.77.0"
 AKS_PREVIEW_MIN_VERSION="19.0.0b15"
 AKS_PREVIEW_FEATURE="AKS-AutomaticHostedSystemProfilePreview"
+FEATURE_REGISTRATION_TIMEOUT_SECONDS="${FEATURE_REGISTRATION_TIMEOUT_SECONDS:-900}"
+FEATURE_REGISTRATION_POLL_INTERVAL_SECONDS="${FEATURE_REGISTRATION_POLL_INTERVAL_SECONDS:-15}"
 
 log() {
   printf '\n[%s] %s\n' "$(date '+%H:%M:%S')" "$*"
@@ -44,14 +46,38 @@ ensure_extension() {
 
   if [[ -z "$installed_version" ]]; then
     log "Installing aks-preview extension"
-    az extension add --name aks-preview >/dev/null
+    az extension add --name aks-preview --allow-preview true --yes >/dev/null
     installed_version="$(az extension show --name aks-preview --query version -o tsv)"
   fi
 
   if ! version_ge "$installed_version" "$AKS_PREVIEW_MIN_VERSION"; then
     log "Updating aks-preview extension"
-    az extension update --name aks-preview >/dev/null
+    az extension update --name aks-preview --allow-preview true >/dev/null
   fi
+}
+
+wait_for_feature_registration() {
+  local elapsed=0
+  local feature_state=""
+
+  while (( elapsed < FEATURE_REGISTRATION_TIMEOUT_SECONDS )); do
+    feature_state="$(az feature show --name "$AKS_PREVIEW_FEATURE" --namespace Microsoft.ContainerService --query properties.state -o tsv 2>/dev/null || true)"
+
+    if [[ "$feature_state" == "Registered" ]]; then
+      return 0
+    fi
+
+    if [[ -z "$feature_state" ]]; then
+      log "Waiting for feature $AKS_PREVIEW_FEATURE to become visible"
+    else
+      log "Waiting for feature $AKS_PREVIEW_FEATURE registration. Current state: $feature_state"
+    fi
+
+    sleep "$FEATURE_REGISTRATION_POLL_INTERVAL_SECONDS"
+    elapsed=$((elapsed + FEATURE_REGISTRATION_POLL_INTERVAL_SECONDS))
+  done
+
+  fail "Feature $AKS_PREVIEW_FEATURE did not reach Registered within ${FEATURE_REGISTRATION_TIMEOUT_SECONDS}s. Check the subscription feature state manually with: az feature show --name $AKS_PREVIEW_FEATURE --namespace Microsoft.ContainerService"
 }
 
 register_prereqs() {
@@ -66,11 +92,10 @@ register_prereqs() {
     --name "$AKS_PREVIEW_FEATURE" \
     --namespace Microsoft.ContainerService >/dev/null 2>&1 || true
 
-  local feature_state
-  feature_state="$(az feature show --name "$AKS_PREVIEW_FEATURE" --namespace Microsoft.ContainerService --query properties.state -o tsv 2>/dev/null || true)"
-  if [[ "$feature_state" != "Registered" ]]; then
-    fail "Feature $AKS_PREVIEW_FEATURE is not yet registered. Wait for registration to complete, then run: az provider register --namespace Microsoft.ContainerService"
-  fi
+  wait_for_feature_registration
+
+  log "Refreshing Microsoft.ContainerService provider registration"
+  az provider register --namespace Microsoft.ContainerService >/dev/null
 }
 
 ensure_group() {
@@ -85,9 +110,27 @@ ensure_supported_vm_size() {
   [[ "$available" == "$ARM64_VM_SIZE" ]] || fail "VM size $ARM64_VM_SIZE is not available in $LOCATION for this subscription. Set ARM64_VM_SIZE or LOCATION to a supported combination."
 }
 
+get_existing_cluster_version() {
+  az resource show \
+    --resource-group "$RESOURCE_GROUP" \
+    --name "$AKS_CLUSTER_NAME" \
+    --resource-type Microsoft.ContainerService/managedClusters \
+    --query properties.kubernetesVersion \
+    -o tsv 2>/dev/null || true
+}
+
+ensure_target_kubernetes_version() {
+  local existing_version
+  existing_version="$(get_existing_cluster_version)"
+
+  if [[ -n "$existing_version" && ! "$existing_version" =~ ^${KUBERNETES_VERSION}(\.|$) ]]; then
+    fail "AKS cluster $AKS_CLUSTER_NAME already exists on Kubernetes $existing_version, but this platform is pinned to Kubernetes $KUBERNETES_VERSION because @kubernetes/client-node currently supports up to Kubernetes v1.34. Recreate or upgrade/downgrade the cluster to the 1.34 minor line before deploying the IDP."
+  fi
+}
+
 ensure_crossplane_spn() {
   local existing_app_id existing_object_id role_scope
-  role_scope="/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RESOURCE_GROUP"
+  role_scope="${CROSSPLANE_ROLE_SCOPE:-/subscriptions/$SUBSCRIPTION_ID}"
 
   existing_app_id="$(az ad sp list --display-name "$CROSSPLANE_SPN_NAME" --query '[0].appId' -o tsv 2>/dev/null || true)"
 
@@ -140,12 +183,15 @@ EOF
 }
 
 create_aks_cluster() {
-  if az aks show --resource-group "$RESOURCE_GROUP" --name "$AKS_CLUSTER_NAME" --output none >/dev/null 2>&1; then
-    log "AKS cluster $AKS_CLUSTER_NAME already exists"
+  local existing_version
+  existing_version="$(get_existing_cluster_version)"
+
+  if [[ -n "$existing_version" ]]; then
+    log "AKS cluster $AKS_CLUSTER_NAME already exists on Kubernetes $existing_version"
     return
   fi
 
-  log "Creating AKS Automatic cluster $AKS_CLUSTER_NAME"
+  log "Creating AKS Automatic cluster $AKS_CLUSTER_NAME on Kubernetes $KUBERNETES_VERSION"
   local cmd=(
     az aks create
     --resource-group "$RESOURCE_GROUP"
@@ -156,12 +202,9 @@ create_aks_cluster() {
     --enable-oidc-issuer
     --enable-workload-identity
     --generate-ssh-keys
+    --kubernetes-version "$KUBERNETES_VERSION"
     --output table
   )
-
-  if [[ -n "$KUBERNETES_VERSION" ]]; then
-    cmd+=(--kubernetes-version "$KUBERNETES_VERSION")
-  fi
 
   "${cmd[@]}"
 }
@@ -182,12 +225,11 @@ ensure_spot_pool() {
     --cluster-name "$AKS_CLUSTER_NAME" \
     --name "$ARM64_POOL_NAME" \
     --node-vm-size "$ARM64_VM_SIZE" \
+    --node-count "$ARM64_MIN_COUNT" \
     --priority Spot \
     --eviction-policy Delete \
     --spot-max-price -1 \
-    --enable-cluster-autoscaler \
-    --min-count "$ARM64_MIN_COUNT" \
-    --max-count "$ARM64_MAX_COUNT" \
+    --ssh-access disabled \
     --mode User \
     --labels workload=platform architecture=arm64 cost=spot \
     --output table
@@ -238,6 +280,7 @@ main() {
   register_prereqs
   ensure_group
   ensure_supported_vm_size
+  ensure_target_kubernetes_version
   ensure_crossplane_spn
   create_aks_cluster
   ensure_spot_pool
