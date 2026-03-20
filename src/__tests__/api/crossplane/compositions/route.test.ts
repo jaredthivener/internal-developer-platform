@@ -47,7 +47,7 @@ describe('GET /api/crossplane/compositions', () => {
       .mockRejectedValueOnce(new Error('K8s internal connection refused'));
     vi.mocked(getCustomObjectsApi).mockReturnValueOnce({
       listClusterCustomObject: mockListClusterCustomObject,
-    } as unknown);
+    } /* eslint-disable-line @typescript-eslint/no-explicit-any */ as any);
 
     const req = new NextRequest(
       'http://localhost:3000/api/crossplane/compositions'
@@ -83,7 +83,7 @@ describe('GET /api/crossplane/compositions', () => {
       .mockResolvedValueOnce(mockK8sResponse);
     vi.mocked(getCustomObjectsApi).mockReturnValueOnce({
       listClusterCustomObject: mockListClusterCustomObject,
-    } as unknown);
+    } /* eslint-disable-line @typescript-eslint/no-explicit-any */ as any);
 
     const req = new NextRequest(
       'http://localhost:3000/api/crossplane/compositions'

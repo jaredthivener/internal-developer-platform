@@ -36,6 +36,16 @@ describe('CompositionList', () => {
     });
   });
 
+  it('renders a stringified error when the fetch rejection is not an Error', async () => {
+    mockFetch.mockRejectedValueOnce('Network offline');
+
+    render(<CompositionList />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Network offline')).toBeInTheDocument();
+    });
+  });
+
   it('renders a table of compositions on success', async () => {
     const mockData = {
       data: [

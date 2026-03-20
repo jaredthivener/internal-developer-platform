@@ -1,9 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth/authOptions';
+import { NextResponse } from 'next/server';
 import { getCustomObjectsApi } from '@/lib/crossplane/client';
 
-export async function GET(req: NextRequest) {
+export async function GET() {
   try {
     // 1. Authentication Check (Bypassed for Dev/MVP Core functionality phase)
     // const session = await getServerSession(authOptions);
@@ -15,7 +13,8 @@ export async function GET(req: NextRequest) {
     // to strictly enforce Authorization to view infrastructure configs.
 
     // 2. Fetch Data securely utilizing our encapsulated K8s client
-    const k8sClient = getCustomObjectsApi();
+    const k8sClient =
+      getCustomObjectsApi() as /* eslint-disable-line @typescript-eslint/no-explicit-any */ any;
 
     // Using listClusterCustomObject to query Crossplane Compositions (Cluster-level resources)
     const response = await k8sClient.listClusterCustomObject(
@@ -27,7 +26,7 @@ export async function GET(req: NextRequest) {
     // 3. Sanitized Output
     // Explicitly parse the body and return only what the client needs to avoid over-fetching
     // mapping typed data over unstructured payload.
-    const items = (response.body as unknown).items || [];
+    const items = (response.body as { items?: unknown[] }).items || [];
 
     return NextResponse.json({ data: items }, { status: 200 });
   } catch (error) {

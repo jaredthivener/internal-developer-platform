@@ -2,9 +2,7 @@
 
 import React, { useState } from 'react';
 import {
-  Box,
   Typography,
-  TextField,
   Button,
   Alert,
   CircularProgress,
@@ -73,7 +71,11 @@ export default function ResourceProvisioner() {
         `Successfully provisioned: ${data.data?.metadata?.name || 'Bucket'}`
       );
     } catch (err: unknown) {
-      setError(err.message);
+      if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError(String(err));
+      }
     } finally {
       setLoading(false);
     }

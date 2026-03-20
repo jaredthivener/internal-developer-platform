@@ -50,7 +50,11 @@ export default function CompositionList() {
       const data = await res.json();
       setCompositions(data.data || []);
     } catch (err: unknown) {
-      setError(err.message);
+      if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError(String(err));
+      }
     } finally {
       setLoading(false);
     }

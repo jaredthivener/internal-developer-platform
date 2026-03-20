@@ -1,5 +1,6 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import ResourceProvisioner from '@/components/features/crossplane/ResourceProvisioner';
 
@@ -21,6 +22,8 @@ describe('ResourceProvisioner', () => {
   });
 
   it('submits the form and handles successful creation', async () => {
+    const user = userEvent.setup();
+
     mockFetch.mockResolvedValueOnce({
       ok: true,
       json: async () => ({
@@ -33,7 +36,7 @@ describe('ResourceProvisioner', () => {
     const submitBtn = screen.getByRole('button', {
       name: /deploy app environment/i,
     });
-    fireEvent.click(submitBtn);
+    await user.click(submitBtn);
 
     // Should indicate success
     await waitFor(() => {
@@ -53,6 +56,8 @@ describe('ResourceProvisioner', () => {
   });
 
   it('displays an error if the API request fails', async () => {
+    const user = userEvent.setup();
+
     mockFetch.mockResolvedValueOnce({
       ok: false,
       status: 400,
@@ -64,10 +69,28 @@ describe('ResourceProvisioner', () => {
     const submitBtn = screen.getByRole('button', {
       name: /deploy app environment/i,
     });
-    fireEvent.click(submitBtn);
+    await user.click(submitBtn);
 
     await waitFor(() => {
       expect(screen.getByText(/Bad Request/i)).toBeInTheDocument();
+    });
+  });
+
+  it('displays a stringified error when the request rejects with a non-Error value', async () => {
+    const user = userEvent.setup();
+
+    mockFetch.mockRejectedValueOnce('Provisioning offline');
+
+    render(<ResourceProvisioner />);
+
+    await user.click(
+      screen.getByRole('button', {
+        name: /deploy app environment/i,
+      })
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Provisioning offline')).toBeInTheDocument();
     });
   });
 });

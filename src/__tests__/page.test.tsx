@@ -1,5 +1,14 @@
 import { render, screen } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
 import Home from '@/app/page';
+
+vi.mock('@/components/features/crossplane/CompositionList', () => ({
+  default: () => <div>Application Environments</div>,
+}));
+
+vi.mock('@/components/features/crossplane/ResourceProvisioner', () => ({
+  default: () => <div>Provision Application Base</div>,
+}));
 
 describe('Home Page', () => {
   it('renders the portal title', () => {

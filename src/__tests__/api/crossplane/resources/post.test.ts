@@ -62,7 +62,7 @@ describe('POST /api/crossplane/resources', () => {
 
     vi.mocked(getCustomObjectsApi).mockReturnValueOnce({
       createClusterCustomObject: mockCreateClusterCustomObject,
-    } as unknown);
+    } /* eslint-disable-line @typescript-eslint/no-explicit-any */ as any);
 
     const res = await POST(req);
 

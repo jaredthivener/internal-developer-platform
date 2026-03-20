@@ -1,6 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth/authOptions';
 import { getCustomObjectsApi } from '@/lib/crossplane/client';
 
 /**
@@ -30,7 +28,8 @@ export async function GET(req: NextRequest) {
     }
 
     // 3. Delegate to Kubernetes cluster
-    const k8sClient = getCustomObjectsApi();
+    const k8sClient =
+      getCustomObjectsApi() as /* eslint-disable-line @typescript-eslint/no-explicit-any */ any;
 
     const response = await k8sClient.listClusterCustomObject(
       group,
@@ -38,7 +37,7 @@ export async function GET(req: NextRequest) {
       plural
     );
 
-    const items = (response.body as unknown).items || [];
+    const items = (response.body as { items?: unknown[] }).items || [];
 
     // Return sanitized resources list
     return NextResponse.json({ data: items }, { status: 200 });
@@ -86,7 +85,8 @@ export async function POST(req: NextRequest) {
 
     // Delegate to K8s API to create the resource
     // Typical Managed Resources are cluster-scoped in native Crossplane/Upbound providers
-    const k8sClient = getCustomObjectsApi();
+    const k8sClient =
+      getCustomObjectsApi() as /* eslint-disable-line @typescript-eslint/no-explicit-any */ any;
 
     // Safety fallback for offline demo
     if (process.env.NODE_ENV === 'development') {
@@ -98,7 +98,7 @@ export async function POST(req: NextRequest) {
           payload
         );
         return NextResponse.json({ data: response.body }, { status: 201 });
-      } catch (k8sErr) {
+      } catch {
         console.log('[API] Catching K8s Err for Dev Demo fallback...');
         // Fake success response so UI functions locally
         const fakeName = payload.metadata?.generateName
@@ -124,7 +124,8 @@ export async function POST(req: NextRequest) {
   } catch (error: unknown) {
     console.error(
       '[API] POST /api/crossplane/resources - Error creating resource:',
-      error?.body || error
+      /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+      (error as any)?.body || error
     );
     return NextResponse.json(
       { error: 'Internal Server Error' },
