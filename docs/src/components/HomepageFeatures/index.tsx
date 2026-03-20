@@ -23,21 +23,23 @@ const featureList: FeatureItem[] = [
   },
   {
     eyebrow: 'Platform model',
-    title: 'Crossplane details translated into intent',
+    title: 'Infrastructure translated into a developer worldview',
     description: (
       <>
         The site frames Kubernetes and Crossplane as platform implementation
-        details behind a cleaner application-environment mental model.
+        details behind a cleaner application-environment mental model that is
+        easier to navigate as a product, not just an ops stack.
       </>
     ),
   },
   {
-    eyebrow: 'Operations',
-    title: 'Reference material organized like a console',
+    eyebrow: 'Orientation',
+    title: 'A guided introduction to the shared platform',
     description: (
       <>
-        Architecture, local development, and roadmap content now sit inside a
-        visual system that feels consistent with the main IDP experience.
+        Architecture, local development, operating context, and product guidance
+        sit together so new developers can understand the IDP as a coherent
+        environment before they ever need a specific workflow.
       </>
     ),
   },

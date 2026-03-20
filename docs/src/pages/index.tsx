@@ -23,10 +23,11 @@ function HomepageHeader() {
               {siteConfig.tagline}
             </p>
             <p className={styles.heroBody}>
-              The documentation site now follows the same product language and
-              visual system as the IDP console: application-first workflows,
-              operational clarity, and a console-like presentation instead of a
-              generic documentation template.
+              This site is the front door into the IDP: how the platform thinks
+              about applications, environments, ownership, operations, and the
+              shared guardrails that shape everyday developer work. It should
+              feel less like a static manual and more like a guided introduction
+              to the operating model behind the console.
             </p>
             <div className={styles.buttons}>
               <Link
@@ -55,11 +56,11 @@ function HomepageHeader() {
               </div>
               <div className={styles.metaCard}>
                 <span className={styles.metaLabel}>Platform model</span>
-                <strong>App environments</strong>
+                <strong>Applications and environments</strong>
               </div>
               <div className={styles.metaCard}>
                 <span className={styles.metaLabel}>Experience</span>
-                <strong>Console-aligned docs</strong>
+                <strong>Shared platform worldview</strong>
               </div>
             </div>
           </div>
@@ -74,29 +75,33 @@ function HomepageHeader() {
                 <div className={styles.consoleSidebarItemActive}>
                   Documentation
                 </div>
-                <div className={styles.consoleSidebarItem}>Architecture</div>
+                <div className={styles.consoleSidebarItem}>Overview</div>
+                <div className={styles.consoleSidebarItem}>Platform Model</div>
                 <div className={styles.consoleSidebarItem}>Local Dev</div>
                 <div className={styles.consoleSidebarItem}>Roadmap</div>
               </div>
               <div className={styles.consoleMain}>
                 <div className={styles.consolePanel}>
                   <span className={styles.consolePanelLabel}>Overview</span>
-                  <strong>Platform operations</strong>
+                  <strong>Enter the IDP world</strong>
                   <p>
-                    Read the docs with the same visual hierarchy and product
-                    framing as the application console.
+                    Learn how the portal describes environments, how the
+                    platform hides raw infrastructure complexity, and where to
+                    go next as a developer using the shared system.
                   </p>
                 </div>
                 <div className={styles.consoleStats}>
                   <div>
                     <span className={styles.consoleStatLabel}>
-                      Environments
+                      Platform language
                     </span>
-                    <strong>Shared platform patterns</strong>
+                    <strong>Applications, resources, operations</strong>
                   </div>
                   <div>
-                    <span className={styles.consoleStatLabel}>Workflows</span>
-                    <strong>Provision, inspect, operate</strong>
+                    <span className={styles.consoleStatLabel}>
+                      What you get
+                    </span>
+                    <strong>Guides, context, and guardrails</strong>
                   </div>
                 </div>
               </div>
