@@ -1,7 +1,9 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { getCustomObjectsApi } from '@/lib/crossplane/client';
 
-export async function GET() {
+export async function GET(req?: NextRequest) {
+  void req;
+
   try {
     // 1. Authentication Check (Bypassed for Dev/MVP Core functionality phase)
     // const session = await getServerSession(authOptions);
