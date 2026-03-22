@@ -15,44 +15,64 @@ import {
   Stack,
   Typography,
 } from '@mui/material';
+import { formatObservationClassification } from '@/lib/observations/presentation';
 
-type StorageAccountResource = {
-  metadata?: {
-    name?: string;
-    creationTimestamp?: string;
+type StorageAccountObservationSummary = {
+  resourceName: string;
+  classification: {
+    code:
+      | 'scan_error'
+      | 'deleting'
+      | 'provisioning'
+      | 'missing_in_azure'
+      | 'orphaned_in_azure'
+      | 'identity_drift'
+      | 'ownership_drift'
+      | 'config_drift'
+      | 'in_sync';
+    severity: 'critical' | 'warning' | 'info' | 'success';
+    reasonCodes: string[];
+    diffCount: number;
   };
-  spec?: {
-    forProvider?: {
-      resourceGroupName?: string;
-      location?: string;
-      accountReplicationType?: string;
-      accessTier?: string;
-    };
+  desired: {
+    resourceGroupName?: string;
+    location?: string;
+    replicationType?: string;
+    accessTier?: string;
   };
-  status?: {
-    atProvider?: {
-      id?: string;
-    };
-    conditions?: Array<{
-      type?: string;
-      status?: string;
-    }>;
+  live: {
+    resourceGroupName?: string;
+    location?: string;
+    replicationType?: string;
+    accessTier?: string;
   };
 };
 
-function getReadyLabel(resource: StorageAccountResource) {
-  const isReady = resource.status?.conditions?.some(
-    (condition) => condition.type === 'Ready' && condition.status === 'True'
-  );
-
-  return isReady ? 'Ready' : 'Pending';
+function getObservationChipColor(
+  code: StorageAccountObservationSummary['classification']['code']
+) {
+  switch (code) {
+    case 'in_sync':
+      return 'success';
+    case 'provisioning':
+      return 'info';
+    case 'deleting':
+    case 'config_drift':
+    case 'ownership_drift':
+    case 'identity_drift':
+      return 'warning';
+    default:
+      return 'error';
+  }
 }
 
 export default function StorageAccountResourceList() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const deletingResourceName = searchParams.get('deleting');
-  const [resources, setResources] = useState<StorageAccountResource[]>([]);
+  const [resources, setResources] = useState<
+    StorageAccountObservationSummary[]
+  >([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -62,9 +82,7 @@ export default function StorageAccountResourceList() {
     async function loadResources() {
       try {
         setError(null);
-        const response = await fetch(
-          '/api/crossplane/resources?group=storage.azure.upbound.io&version=v1beta1&plural=accounts'
-        );
+        const response = await fetch('/api/observations/storage-accounts');
         const data = await response.json();
 
         if (!response.ok) {
@@ -107,7 +125,7 @@ export default function StorageAccountResourceList() {
 
     if (
       !resources.some(
-        (resource) => resource.metadata?.name === deletingResourceName
+        (resource) => resource.resourceName === deletingResourceName
       )
     ) {
       router.replace('/resources');
@@ -119,7 +137,7 @@ export default function StorageAccountResourceList() {
         setError(null);
 
         const response = await fetch(
-          '/api/crossplane/resources?group=storage.azure.upbound.io&version=v1beta1&plural=accounts'
+          '/api/observations/storage-accounts?refresh=true'
         );
         const data = await response.json();
 
@@ -183,8 +201,12 @@ export default function StorageAccountResourceList() {
   return (
     <Grid container spacing={2}>
       {resources.map((resource) => {
-        const name = resource.metadata?.name || 'unknown-resource';
-        const provider = resource.spec?.forProvider;
+        const name = resource.resourceName || 'unknown-resource';
+        const desired = resource.desired;
+        const classificationLabel =
+          deletingResourceName === name
+            ? 'Deleting'
+            : formatObservationClassification(resource.classification.code);
 
         return (
           <Grid key={name} size={{ xs: 12, md: 6, xl: 4 }}>
@@ -209,17 +231,13 @@ export default function StorageAccountResourceList() {
                       </Typography>
                     </Box>
                     <Chip
-                      label={
-                        deletingResourceName === name
-                          ? 'Deleting'
-                          : getReadyLabel(resource)
-                      }
+                      label={classificationLabel}
                       color={
                         deletingResourceName === name
                           ? 'warning'
-                          : getReadyLabel(resource) === 'Ready'
-                            ? 'success'
-                            : 'warning'
+                          : getObservationChipColor(
+                              resource.classification.code
+                            )
                       }
                       size="small"
                     />
@@ -227,18 +245,23 @@ export default function StorageAccountResourceList() {
 
                   <Stack spacing={1}>
                     <Typography variant="body2" color="text.secondary">
-                      Resource group: {provider?.resourceGroupName || 'Unknown'}
+                      Resource group: {desired?.resourceGroupName || 'Unknown'}
                     </Typography>
                     <Typography variant="body2" color="text.secondary">
-                      Location: {provider?.location || 'Unknown'}
+                      Location: {desired?.location || 'Unknown'}
                     </Typography>
                     <Typography variant="body2" color="text.secondary">
-                      Replication:{' '}
-                      {provider?.accountReplicationType || 'Unknown'}
+                      Replication: {desired?.replicationType || 'Unknown'}
                     </Typography>
                     <Typography variant="body2" color="text.secondary">
-                      Access tier: {provider?.accessTier || 'Unknown'}
+                      Access tier: {desired?.accessTier || 'Unknown'}
                     </Typography>
+                    {resource.classification.diffCount > 0 ? (
+                      <Typography variant="body2" color="warning.main">
+                        {resource.classification.diffCount} difference
+                        {resource.classification.diffCount === 1 ? '' : 's'}
+                      </Typography>
+                    ) : null}
                   </Stack>
 
                   <Box sx={{ mt: 'auto' }}>

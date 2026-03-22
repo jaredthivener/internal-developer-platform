@@ -18,6 +18,10 @@ AKS_PREVIEW_MIN_VERSION="19.0.0b15"
 AKS_PREVIEW_FEATURE="AKS-AutomaticHostedSystemProfilePreview"
 FEATURE_REGISTRATION_TIMEOUT_SECONDS="${FEATURE_REGISTRATION_TIMEOUT_SECONDS:-900}"
 FEATURE_REGISTRATION_POLL_INTERVAL_SECONDS="${FEATURE_REGISTRATION_POLL_INTERVAL_SECONDS:-15}"
+CLUSTER_READY_TIMEOUT_SECONDS="${CLUSTER_READY_TIMEOUT_SECONDS:-1200}"
+CLUSTER_READY_POLL_INTERVAL_SECONDS="${CLUSTER_READY_POLL_INTERVAL_SECONDS:-20}"
+NODEPOOL_ADD_RETRY_COUNT="${NODEPOOL_ADD_RETRY_COUNT:-20}"
+NODEPOOL_ADD_RETRY_DELAY_SECONDS="${NODEPOOL_ADD_RETRY_DELAY_SECONDS:-30}"
 
 log() {
   printf '\n[%s] %s\n' "$(date '+%H:%M:%S')" "$*"
@@ -119,6 +123,38 @@ get_existing_cluster_version() {
     -o tsv 2>/dev/null || true
 }
 
+get_cluster_provisioning_state() {
+  az aks show \
+    --resource-group "$RESOURCE_GROUP" \
+    --name "$AKS_CLUSTER_NAME" \
+    --query provisioningState \
+    -o tsv 2>/dev/null || true
+}
+
+wait_for_cluster_ready() {
+  local elapsed=0
+  local provisioning_state=""
+
+  while (( elapsed < CLUSTER_READY_TIMEOUT_SECONDS )); do
+    provisioning_state="$(get_cluster_provisioning_state)"
+
+    if [[ "$provisioning_state" == "Succeeded" ]]; then
+      return 0
+    fi
+
+    if [[ -z "$provisioning_state" ]]; then
+      log "Waiting for AKS cluster $AKS_CLUSTER_NAME to become queryable"
+    else
+      log "Waiting for AKS cluster $AKS_CLUSTER_NAME to become ready. Current provisioning state: $provisioning_state"
+    fi
+
+    sleep "$CLUSTER_READY_POLL_INTERVAL_SECONDS"
+    elapsed=$((elapsed + CLUSTER_READY_POLL_INTERVAL_SECONDS))
+  done
+
+  fail "AKS cluster $AKS_CLUSTER_NAME did not reach Succeeded within ${CLUSTER_READY_TIMEOUT_SECONDS}s. Check the cluster state manually with: az aks show --resource-group $RESOURCE_GROUP --name $AKS_CLUSTER_NAME --query provisioningState -o tsv"
+}
+
 ensure_target_kubernetes_version() {
   local existing_version
   existing_version="$(get_existing_cluster_version)"
@@ -207,6 +243,8 @@ create_aks_cluster() {
   )
 
   "${cmd[@]}"
+
+  wait_for_cluster_ready
 }
 
 ensure_spot_pool() {
@@ -220,19 +258,46 @@ ensure_spot_pool() {
   fi
 
   log "Adding low-cost Arm64 Spot node pool $ARM64_POOL_NAME"
-  az aks nodepool add \
-    --resource-group "$RESOURCE_GROUP" \
-    --cluster-name "$AKS_CLUSTER_NAME" \
-    --name "$ARM64_POOL_NAME" \
-    --node-vm-size "$ARM64_VM_SIZE" \
-    --node-count "$ARM64_MIN_COUNT" \
-    --priority Spot \
-    --eviction-policy Delete \
-    --spot-max-price -1 \
-    --ssh-access disabled \
-    --mode User \
-    --labels workload=platform architecture=arm64 cost=spot \
-    --output table
+  local attempt=1
+  local output=""
+
+  while (( attempt <= NODEPOOL_ADD_RETRY_COUNT )); do
+    set +e
+    output="$({
+      az aks nodepool add \
+        --resource-group "$RESOURCE_GROUP" \
+        --cluster-name "$AKS_CLUSTER_NAME" \
+        --name "$ARM64_POOL_NAME" \
+        --node-vm-size "$ARM64_VM_SIZE" \
+        --node-count "$ARM64_MIN_COUNT" \
+        --priority Spot \
+        --eviction-policy Delete \
+        --spot-max-price -1 \
+        --ssh-access disabled \
+        --mode User \
+        --labels workload=platform architecture=arm64 cost=spot \
+        --output table;
+    } 2>&1)"
+    local status=$?
+    set -e
+
+    if [[ $status -eq 0 ]]; then
+      printf '%s\n' "$output"
+      return 0
+    fi
+
+    if [[ "$output" == *"OperationNotAllowed"* && "$output" == *"in progress update managed cluster operation"* ]]; then
+      log "AKS still has an in-flight managed update. Retrying node pool add in ${NODEPOOL_ADD_RETRY_DELAY_SECONDS}s (attempt ${attempt}/${NODEPOOL_ADD_RETRY_COUNT})."
+      sleep "$NODEPOOL_ADD_RETRY_DELAY_SECONDS"
+      attempt=$((attempt + 1))
+      continue
+    fi
+
+    printf '%s\n' "$output" >&2
+    return $status
+  done
+
+  fail "Timed out waiting to add node pool $ARM64_POOL_NAME because AKS continued reporting an in-progress managed update."
 }
 
 assign_cluster_access() {

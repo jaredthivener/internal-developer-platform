@@ -180,6 +180,11 @@ install_crossplane() {
   kubectl -n crossplane-system rollout status deployment/crossplane-rbac-manager --timeout=5m
 }
 
+apply_crossplane_runtime_config() {
+  log "Applying default Crossplane deployment runtime config"
+  kubectl apply -f "$ROOT_DIR/platform/crossplane/configs/default-deployment-runtime-config.yaml"
+}
+
 apply_azure_providers() {
   log "Applying Azure Crossplane provider packages"
   sed "s|PROVIDER_VERSION_PLACEHOLDER|$AZURE_PROVIDER_VERSION|g" \
@@ -203,9 +208,6 @@ apply_crossplane_credentials() {
   kubectl -n crossplane-system create secret generic azure-provider-creds \
     --from-file=creds="$SP_CREDENTIALS_FILE" \
     --dry-run=client -o yaml | kubectl apply -f -
-
-  log "Applying default Crossplane deployment runtime config"
-  kubectl apply -f "$ROOT_DIR/platform/crossplane/configs/default-deployment-runtime-config.yaml"
 
   kubectl apply -f "$ROOT_DIR/platform/crossplane/configs/provider-config.yaml"
   kubectl apply -f "$ROOT_DIR/platform/crossplane/configs/cluster-provider-config.yaml"
@@ -249,7 +251,6 @@ create_app_env_secret() {
 
   local temp_env_file
   temp_env_file="$(mktemp)"
-  trap 'rm -f "$temp_env_file"' RETURN
 
   grep -v '^NEXTAUTH_URL=' "$IDP_ENV_FILE" > "$temp_env_file" || true
   printf 'NEXTAUTH_URL=%s\n' "$NEXTAUTH_EXTERNAL_URL" >> "$temp_env_file"
@@ -258,6 +259,8 @@ create_app_env_secret() {
   kubectl -n idp-system create secret generic idp-app-env \
     --from-env-file="$temp_env_file" \
     --dry-run=client -o yaml | kubectl apply -f -
+
+  rm -f "$temp_env_file"
 }
 
 deploy_ingress() {
@@ -296,6 +299,7 @@ main() {
   ensure_namespaces
   ensure_acr
   install_crossplane
+  apply_crossplane_runtime_config
   apply_azure_providers
   apply_crossplane_credentials
   build_and_push_image

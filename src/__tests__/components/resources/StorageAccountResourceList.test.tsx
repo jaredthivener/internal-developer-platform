@@ -27,26 +27,33 @@ describe('StorageAccountResourceList', () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
       json: async () => ({
+        scan: {
+          source: 'crossplane+azure',
+          observedAt: '2026-03-22T20:00:00Z',
+          cacheTtlSeconds: 300,
+        },
         data: [
           {
-            metadata: {
-              name: 'devstorealpha01',
-              creationTimestamp: '2026-03-20T15:15:00Z',
+            resourceName: 'devstorealpha01',
+            classification: {
+              code: 'in_sync',
+              severity: 'success',
+              reasonCodes: [],
+              diffCount: 0,
             },
-            spec: {
-              forProvider: {
-                resourceGroupName: 'idp-crossplane-smoke',
-                location: 'eastus2',
-                accountReplicationType: 'LRS',
-                accessTier: 'Hot',
-              },
+            desired: {
+              resourceGroupName: 'idp-crossplane-smoke',
+              location: 'eastus2',
+              replicationType: 'LRS',
+              accessTier: 'Hot',
             },
-            status: {
-              conditions: [{ type: 'Ready', status: 'True' }],
-              atProvider: {
-                id: '/subscriptions/test/resourceGroups/idp-crossplane-smoke/providers/Microsoft.Storage/storageAccounts/devstorealpha01',
-              },
+            live: {
+              resourceGroupName: 'idp-crossplane-smoke',
+              location: 'eastus2',
+              replicationType: 'LRS',
+              accessTier: 'Hot',
             },
+            observedAt: '2026-03-22T20:00:00Z',
           },
         ],
       }),
@@ -59,7 +66,7 @@ describe('StorageAccountResourceList', () => {
     ).toBeInTheDocument();
     expect(screen.getByText(/idp-crossplane-smoke/i)).toBeInTheDocument();
     expect(screen.getByText(/eastus2/i)).toBeInTheDocument();
-    expect(screen.getByText(/ready/i)).toBeInTheDocument();
+    expect(screen.getByText(/in sync/i)).toBeInTheDocument();
     expect(
       screen.getByRole('link', { name: /view details for devstorealpha01/i })
     ).toHaveAttribute('href', '/resources/devstorealpha01');
@@ -68,7 +75,14 @@ describe('StorageAccountResourceList', () => {
   it('renders an empty state when no storage accounts exist', async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
-      json: async () => ({ data: [] }),
+      json: async () => ({
+        scan: {
+          source: 'crossplane+azure',
+          observedAt: '2026-03-22T20:00:00Z',
+          cacheTtlSeconds: 300,
+        },
+        data: [],
+      }),
     } as Response);
 
     render(<StorageAccountResourceList />);
@@ -93,17 +107,24 @@ describe('StorageAccountResourceList', () => {
         json: async () => ({
           data: [
             {
-              metadata: { name: 'devstorealpha01' },
-              spec: {
-                forProvider: {
-                  resourceGroupName: 'idp-crossplane-smoke',
-                  location: 'eastus2',
-                  accountReplicationType: 'LRS',
-                  accessTier: 'Hot',
-                },
+              resourceName: 'devstorealpha01',
+              classification: {
+                code: 'deleting',
+                severity: 'warning',
+                reasonCodes: ['deleting'],
+                diffCount: 0,
               },
-              status: {
-                conditions: [{ type: 'Ready', status: 'True' }],
+              desired: {
+                resourceGroupName: 'idp-crossplane-smoke',
+                location: 'eastus2',
+                replicationType: 'LRS',
+                accessTier: 'Hot',
+              },
+              live: {
+                resourceGroupName: 'idp-crossplane-smoke',
+                location: 'eastus2',
+                replicationType: 'LRS',
+                accessTier: 'Hot',
               },
             },
           ],
@@ -111,7 +132,14 @@ describe('StorageAccountResourceList', () => {
       } as Response)
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ data: [] }),
+        json: async () => ({
+          scan: {
+            source: 'crossplane+azure',
+            observedAt: '2026-03-22T20:00:03Z',
+            cacheTtlSeconds: 300,
+          },
+          data: [],
+        }),
       } as Response);
 
     render(<StorageAccountResourceList />);
@@ -148,5 +176,50 @@ describe('StorageAccountResourceList', () => {
     await waitFor(() => {
       expect(screen.getByText(/cluster api unavailable/i)).toBeInTheDocument();
     });
+  });
+
+  it('renders drift classification when Azure differs from the desired state', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        scan: {
+          source: 'crossplane+azure',
+          observedAt: '2026-03-22T20:00:00Z',
+          cacheTtlSeconds: 300,
+        },
+        data: [
+          {
+            resourceName: 'devstorealpha01',
+            classification: {
+              code: 'config_drift',
+              severity: 'warning',
+              reasonCodes: ['replicationType'],
+              diffCount: 1,
+            },
+            desired: {
+              resourceGroupName: 'idp-crossplane-smoke',
+              location: 'eastus2',
+              replicationType: 'LRS',
+              accessTier: 'Hot',
+            },
+            live: {
+              resourceGroupName: 'idp-crossplane-smoke',
+              location: 'eastus2',
+              replicationType: 'GRS',
+              accessTier: 'Hot',
+            },
+            observedAt: '2026-03-22T20:00:00Z',
+          },
+        ],
+      }),
+    } as Response);
+
+    render(<StorageAccountResourceList />);
+
+    expect(
+      await screen.findByRole('heading', { name: /devstorealpha01/i })
+    ).toBeInTheDocument();
+    expect(screen.getByText(/drifted/i)).toBeInTheDocument();
+    expect(screen.getByText(/1 difference/i)).toBeInTheDocument();
   });
 });

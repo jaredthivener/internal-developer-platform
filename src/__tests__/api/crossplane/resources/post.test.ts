@@ -7,9 +7,14 @@ vi.mock('next-auth', () => ({
 }));
 import { POST } from '@/app/api/crossplane/resources/route';
 import { getCustomObjectsApi } from '@/lib/crossplane/client';
+import { getDesiredStateStore } from '@/lib/persistence/store';
 
 vi.mock('@/lib/crossplane/client', () => ({
   getCustomObjectsApi: vi.fn(),
+}));
+
+vi.mock('@/lib/persistence/store', () => ({
+  getDesiredStateStore: vi.fn(),
 }));
 
 vi.mock('@/lib/auth/authOptions', () => ({
@@ -20,6 +25,11 @@ describe('POST /api/crossplane/resources', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(getCustomObjectsApi).mockReset();
+    vi.mocked(getDesiredStateStore).mockReturnValue({
+      persistSubmission: vi.fn().mockResolvedValue(undefined),
+      markSubmissionApplied: vi.fn().mockResolvedValue(undefined),
+      markSubmissionFailed: vi.fn().mockResolvedValue(undefined),
+    });
   });
 
   it('should return 400 Bad Request if missing required payload parameters', async () => {
@@ -68,14 +78,44 @@ describe('POST /api/crossplane/resources', () => {
 
     expect(res.status).toBe(201);
     const body = await res.json();
+    const desiredStateStore =
+      vi.mocked(getDesiredStateStore).mock.results[0]?.value;
 
     expect(mockCreateClusterCustomObject).toHaveBeenCalledWith({
       group: 's3.aws.m.upbound.io',
       version: 'v1beta1',
       plural: 'buckets',
-      body: mockPayload.payload,
+      body: expect.objectContaining({
+        metadata: expect.objectContaining({
+          annotations: expect.objectContaining({
+            'idp.jared.io/request-id': expect.any(String),
+          }),
+        }),
+      }),
     });
 
+    expect(body.requestId).toEqual(expect.any(String));
     expect(body.data.metadata.name).toBe('test-bucket-123');
+    expect(desiredStateStore.persistSubmission).toHaveBeenCalledWith(
+      expect.objectContaining({
+        requestId: body.requestId,
+        group: 's3.aws.m.upbound.io',
+        version: 'v1beta1',
+        plural: 'buckets',
+        payload: expect.objectContaining({
+          metadata: expect.objectContaining({
+            annotations: expect.objectContaining({
+              'idp.jared.io/request-id': body.requestId,
+            }),
+          }),
+        }),
+      })
+    );
+    expect(desiredStateStore.markSubmissionApplied).toHaveBeenCalledWith(
+      body.requestId,
+      expect.objectContaining({
+        resourceName: 'test-bucket-123',
+      })
+    );
   });
 });

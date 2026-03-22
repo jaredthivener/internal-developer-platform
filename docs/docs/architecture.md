@@ -43,6 +43,8 @@ The main storage lifecycle runs through the generic Crossplane resource route:
 
 The Azure Storage workflow submits a `storage.azure.upbound.io/v1beta1` `Account` object through that API layer.
 
+The current implementation is intentionally simple, but it also means the management AKS cluster is acting as both the reconciliation plane and the only durable home for dynamically created desired state. The target direction is to separate those concerns by persisting desired state outside Kubernetes, observing Azure independently of Crossplane health, and projecting a drift-aware read model into the UI. For the detailed plan, see [Disaster Recovery And Drift Management](./disaster-recovery-and-drift-management.md).
+
 ## Development Mode
 
 For local UI iteration, API routes can return mocked development responses when the backing cluster is unavailable. That keeps product work moving even when a Kubernetes environment is offline.

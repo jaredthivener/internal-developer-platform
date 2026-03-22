@@ -1,4 +1,5 @@
-import { Box, Button, Stack, Typography } from '@mui/material';
+import KeyboardArrowLeftRoundedIcon from '@mui/icons-material/KeyboardArrowLeftRounded';
+import { Box, Button, Chip, Stack, Typography } from '@mui/material';
 import StorageAccountResourceDetails from '@/components/features/resources/StorageAccountResourceDetails';
 
 export default async function ResourceDetailsPage({
@@ -16,12 +17,22 @@ export default async function ResourceDetailsPage({
           px: { xs: 0.5, md: 0 },
         }}
       >
-        <Stack spacing={1.5}>
+        <Stack spacing={1.75}>
           <Box>
-            <Button href="/resources" variant="text">
+            <Button
+              href="/resources"
+              variant="text"
+              startIcon={<KeyboardArrowLeftRoundedIcon />}
+            >
               Back to resources
             </Button>
           </Box>
+
+          <Chip
+            label="Resource operations"
+            size="small"
+            sx={{ alignSelf: 'flex-start', fontWeight: 600 }}
+          />
 
           <Typography
             variant="h3"
@@ -39,8 +50,8 @@ export default async function ResourceDetailsPage({
             color="text.secondary"
             sx={{ maxWidth: 840 }}
           >
-            Inspect the current configuration, provider state, and lifecycle
-            actions for the selected storage account.
+            Inspect runtime health, compare desired and observed configuration,
+            and take the next operational action from a single console view.
           </Typography>
         </Stack>
       </Box>

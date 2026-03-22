@@ -18,6 +18,8 @@
     "prepare": "husky"
   },
   "dependencies": {
+    "@azure/identity": "^4.13.1",
+    "@azure/storage-blob": "^12.31.0",
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
     "@kubernetes/client-node": "^1.4.0",
