@@ -9,6 +9,7 @@ import {
   Stack,
   Typography,
 } from '@mui/material';
+import PageHeader, { pageSectionSx } from '@/components/layout/PageHeader';
 
 const platformControls = [
   'Authentication remains enforced through Entra ID-backed sign-in.',
@@ -24,35 +25,11 @@ const environmentDefaults = [
 
 export default function SettingsPage() {
   return (
-    <Box sx={{ maxWidth: 1440, margin: '0 auto', width: '100%' }}>
-      <Box
-        sx={{
-          mb: 4.5,
-          px: { xs: 0.5, md: 0 },
-        }}
-      >
-        <Stack spacing={1.25}>
-          <Typography
-            variant="h3"
-            component="h1"
-            sx={{
-              fontWeight: 600,
-              color: 'text.primary',
-              letterSpacing: '-0.03em',
-            }}
-          >
-            Settings
-          </Typography>
-          <Typography
-            variant="body1"
-            color="text.secondary"
-            sx={{ maxWidth: 840 }}
-          >
-            Manage platform access, delivery defaults, and environment
-            guardrails for the portal experience.
-          </Typography>
-        </Stack>
-      </Box>
+    <Box sx={pageSectionSx}>
+      <PageHeader
+        title="Settings"
+        description="Manage platform access, delivery defaults, and environment guardrails for the portal experience."
+      />
 
       <Stack spacing={3}>
         <Card elevation={0}>

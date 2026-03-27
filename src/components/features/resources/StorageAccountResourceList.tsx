@@ -16,6 +16,7 @@ import {
   Typography,
 } from '@mui/material';
 import { formatObservationClassification } from '@/lib/observations/presentation';
+import { azureStorageAccountResourceKind } from '@/lib/resources/managedResourceKind';
 
 type StorageAccountObservationSummary = {
   resourceName: string;
@@ -67,6 +68,8 @@ function getObservationChipColor(
 }
 
 export default function StorageAccountResourceList() {
+  const resourceKind = azureStorageAccountResourceKind;
+  const observationsPathname = resourceKind.observationsPathname;
   const router = useRouter();
   const searchParams = useSearchParams();
   const deletingResourceName = searchParams.get('deleting');
@@ -82,7 +85,7 @@ export default function StorageAccountResourceList() {
     async function loadResources() {
       try {
         setError(null);
-        const response = await fetch('/api/observations/storage-accounts');
+        const response = await fetch(observationsPathname);
         const data = await response.json();
 
         if (!response.ok) {
@@ -116,7 +119,7 @@ export default function StorageAccountResourceList() {
     return () => {
       isActive = false;
     };
-  }, []);
+  }, [observationsPathname]);
 
   useEffect(() => {
     if (!deletingResourceName) {
@@ -136,9 +139,7 @@ export default function StorageAccountResourceList() {
       try {
         setError(null);
 
-        const response = await fetch(
-          '/api/observations/storage-accounts?refresh=true'
-        );
+        const response = await fetch(`${observationsPathname}?refresh=true`);
         const data = await response.json();
 
         if (!response.ok) {
@@ -158,7 +159,7 @@ export default function StorageAccountResourceList() {
     return () => {
       window.clearTimeout(timer);
     };
-  }, [deletingResourceName, resources, router]);
+  }, [deletingResourceName, observationsPathname, resources, router]);
 
   if (loading) {
     return (
@@ -178,19 +179,18 @@ export default function StorageAccountResourceList() {
         <CardContent sx={{ p: 4 }}>
           <Stack spacing={2} alignItems="flex-start">
             <Typography variant="h5" component="h2" sx={{ fontWeight: 600 }}>
-              No storage accounts have been provisioned yet
+              No managed resources are available yet
             </Typography>
             <Typography variant="body1" color="text.secondary">
-              Create a storage account from the catalog and it will appear here
-              for ongoing lifecycle operations.
+              {resourceKind.emptyStateDescription}
             </Typography>
             <Button
               component={Link}
-              href="/catalog/azure-storage"
+              href={resourceKind.catalogHref}
               variant="contained"
               disableElevation
             >
-              Open the catalog to create one
+              {resourceKind.emptyStateActionLabel}
             </Button>
           </Stack>
         </CardContent>
@@ -227,7 +227,7 @@ export default function StorageAccountResourceList() {
                         {name}
                       </Typography>
                       <Typography variant="body2" color="text.secondary">
-                        Storage Account
+                        {resourceKind.displayName}
                       </Typography>
                     </Box>
                     <Chip

@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import type { ReactNode } from 'react';
 import {
   Box,
   Card,
@@ -14,43 +14,50 @@ import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import ShieldOutlinedIcon from '@mui/icons-material/ShieldOutlined';
 import WarningAmberOutlinedIcon from '@mui/icons-material/WarningAmberOutlined';
 import VerifiedOutlinedIcon from '@mui/icons-material/VerifiedOutlined';
+import { getServicePortfolioSummary } from '@/lib/catalog/servicePortfolio';
 
 type MetricAccent = 'warning' | 'success' | 'error' | 'info';
+
+const portfolioSummary = getServicePortfolioSummary();
 
 const overviewMetrics: Array<{
   label: string;
   value: string;
   detail: string;
   accent: MetricAccent;
-  icon: React.ReactNode;
+  icon: ReactNode;
 }> = [
   {
-    label: 'Monthly spend',
-    value: '$142',
-    detail: '$8 under monthly credit target',
-    accent: 'warning',
-    icon: <TrendingUpIcon fontSize="small" />,
+    label: 'Catalog domains',
+    value: String(portfolioSummary.catalogDomainCount),
+    detail:
+      'Compute, storage, data, and network services are tracked in one control surface.',
+    accent: 'info',
+    icon: <VerifiedOutlinedIcon fontSize="small" />,
   },
   {
-    label: 'Policy coverage',
-    value: '89%',
-    detail: 'Azure Policy applied across 8 resource groups',
+    label: 'Live workflows',
+    value: String(portfolioSummary.liveWorkflowCount),
+    detail:
+      'Storage account provisioning is ready today while the remaining service workflows are staged.',
     accent: 'success',
     icon: <ShieldOutlinedIcon fontSize="small" />,
   },
   {
-    label: 'Critical findings',
-    value: '3 open',
-    detail: '1 PostgreSQL server needs remediation this week',
-    accent: 'error',
-    icon: <WarningAmberOutlinedIcon fontSize="small" />,
+    label: 'Tracked services',
+    value: String(portfolioSummary.trackedServiceCount),
+    detail:
+      'Clusters, accounts, servers, and networks currently represented in the estate.',
+    accent: 'warning',
+    icon: <TrendingUpIcon fontSize="small" />,
   },
   {
-    label: 'Healthy services',
-    value: '12 / 14',
-    detail: 'Core Azure services inside the operating budget',
-    accent: 'info',
-    icon: <VerifiedOutlinedIcon fontSize="small" />,
+    label: 'Healthy domains',
+    value: `${portfolioSummary.healthyDomainCount} / ${portfolioSummary.catalogDomainCount}`,
+    detail:
+      'Three service domains are currently operating at or above the portfolio health target.',
+    accent: 'error',
+    icon: <WarningAmberOutlinedIcon fontSize="small" />,
   },
 ];
 
@@ -94,7 +101,8 @@ export default function CloudEstateOverview() {
             >
               Platform-managed Azure footprint across compute, storage, data,
               and networking. Use the catalog below to inspect ownership,
-              posture, and operating signals before drilling into a service.
+              posture, and operating signals before drilling into the live
+              storage workflow or the staged domains behind it.
             </Typography>
           </Stack>
 

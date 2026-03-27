@@ -74,6 +74,7 @@ describe('StorageAccountResourceDetails', () => {
     expect(
       await screen.findByRole('heading', { name: /devstorealpha01/i })
     ).toBeInTheDocument();
+    expect(screen.getByText(/^Azure Storage Account$/i)).toBeInTheDocument();
     expect(screen.getByText(/^Resource group$/i)).toBeInTheDocument();
     expect(screen.getByText(/^idp-crossplane-smoke$/i)).toBeInTheDocument();
     expect(screen.getByText(/^Account tier$/i)).toBeInTheDocument();
@@ -92,6 +93,19 @@ describe('StorageAccountResourceDetails', () => {
     ).toBeInTheDocument();
     expect(
       screen.getByRole('button', { name: /delete resource/i })
+    ).toBeInTheDocument();
+  });
+
+  it('renders a generic not-found message when the managed resource is missing', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ data: null }),
+    } as Response);
+
+    render(<StorageAccountResourceDetails resourceName="missing-resource" />);
+
+    expect(
+      await screen.findByText(/managed resource not found/i)
     ).toBeInTheDocument();
   });
 

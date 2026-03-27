@@ -113,6 +113,51 @@ function buildSubmissionRecord(
   };
 }
 
+function getOfflineMockCollection(
+  group: string,
+  plural: string,
+  name: string | null
+) {
+  if (group === 'azure.m.upbound.io' && plural === 'resourcegroups') {
+    if (name) {
+      return {
+        metadata: { name },
+        status: {
+          conditions: [{ type: 'Ready', status: 'True' }],
+        },
+      };
+    }
+
+    return [
+      {
+        metadata: { name: 'idp-crossplane-smoke' },
+        status: {
+          conditions: [{ type: 'Ready', status: 'True' }],
+        },
+      },
+    ];
+  }
+
+  return name
+    ? {
+        metadata: { name },
+        spec: {
+          forProvider: {
+            resourceGroupName: 'idp-crossplane-smoke',
+            location: 'westus3',
+            accountTier: 'Standard',
+            accountReplicationType: 'LRS',
+            accessTier: 'Hot',
+            publicNetworkAccessEnabled: true,
+          },
+        },
+        status: {
+          conditions: [{ type: 'Ready', status: 'True' }],
+        },
+      }
+    : [];
+}
+
 /**
  * GET /api/crossplane/resources
  * Fetches arbitrary Crossplane Managed Resources or general Custom Resources.
@@ -144,28 +189,16 @@ export async function GET(req: NextRequest) {
       if (name) {
         return NextResponse.json(
           {
-            data: {
-              metadata: { name },
-              spec: {
-                forProvider: {
-                  resourceGroupName: 'idp-crossplane-smoke',
-                  location: 'westus3',
-                  accountTier: 'Standard',
-                  accountReplicationType: 'LRS',
-                  accessTier: 'Hot',
-                  publicNetworkAccessEnabled: true,
-                },
-              },
-              status: {
-                conditions: [{ type: 'Ready', status: 'True' }],
-              },
-            },
+            data: getOfflineMockCollection(group, plural, name),
           },
           { status: 200 }
         );
       }
 
-      return NextResponse.json({ data: [] }, { status: 200 });
+      return NextResponse.json(
+        { data: getOfflineMockCollection(group, plural, null) },
+        { status: 200 }
+      );
     }
 
     // 3. Delegate to Kubernetes cluster

@@ -184,6 +184,33 @@ describe('GET /api/crossplane/resources', () => {
       process.env.IDP_ALLOW_OFFLINE_K8S = originalFlag;
     }
   });
+
+  it('should return a ready mock resource group in offline mode for the storage workflow', async () => {
+    const originalFlag = process.env.IDP_ALLOW_OFFLINE_K8S;
+    process.env.IDP_ALLOW_OFFLINE_K8S = 'true';
+
+    const req = new NextRequest(
+      'http://localhost:3000/api/crossplane/resources?group=azure.m.upbound.io&version=v1beta1&plural=resourcegroups'
+    );
+    const res = await GET(req);
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.data).toEqual([
+      {
+        metadata: { name: 'idp-crossplane-smoke' },
+        status: {
+          conditions: [{ type: 'Ready', status: 'True' }],
+        },
+      },
+    ]);
+
+    if (originalFlag === undefined) {
+      delete process.env.IDP_ALLOW_OFFLINE_K8S;
+    } else {
+      process.env.IDP_ALLOW_OFFLINE_K8S = originalFlag;
+    }
+  });
 });
 
 describe('DELETE /api/crossplane/resources', () => {

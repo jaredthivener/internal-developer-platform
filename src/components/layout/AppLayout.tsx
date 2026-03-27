@@ -1,10 +1,9 @@
 'use client';
 
-import React, { useState, useContext } from 'react';
+import { type ReactNode, useState } from 'react';
 import {
   AppBar,
   Box,
-  CssBaseline,
   Drawer,
   IconButton,
   List,
@@ -26,9 +25,16 @@ import GridViewRoundedIcon from '@mui/icons-material/GridViewRounded';
 import StorageRoundedIcon from '@mui/icons-material/StorageRounded';
 import Brightness4Icon from '@mui/icons-material/Brightness4';
 import Brightness7Icon from '@mui/icons-material/Brightness7';
-import { ThemeModeContext } from '@/app/Providers';
+import { useThemeMode } from '@/components/layout/themeMode';
 
 const drawerWidth = 260;
+
+type NavigationItem = {
+  label: string;
+  href: string;
+  icon: ReactNode;
+  matchesPath: (pathname: string) => boolean;
+};
 
 const navigationItems = [
   {
@@ -61,16 +67,21 @@ const navigationItems = [
     icon: <SettingsIcon />,
     matchesPath: (pathname: string) => pathname.startsWith('/settings'),
   },
-];
+] satisfies ReadonlyArray<NavigationItem>;
 
-export default function AppLayout({ children }: { children: React.ReactNode }) {
+export default function AppLayout({ children }: { children: ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
-  const colorMode = useContext(ThemeModeContext);
+  const colorMode = useThemeMode();
   const pathname = usePathname();
 
   const handleDrawerToggle = () => {
-    setMobileOpen(!mobileOpen);
+    setMobileOpen((open) => !open);
   };
+
+  const themeToggleLabel =
+    colorMode.mode === 'dark'
+      ? 'Switch to light theme'
+      : 'Switch to dark theme';
 
   const drawer = (
     <div>
@@ -97,6 +108,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               <ListItemButton
                 component={item.href ? Link : 'button'}
                 href={item.href}
+                onClick={() => setMobileOpen(false)}
                 selected={isSelected}
                 aria-current={isSelected ? 'page' : undefined}
                 disabled={!item.href}
@@ -155,7 +167,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           >
             Platform Operations
           </Typography>
-          <IconButton onClick={colorMode.toggleColorMode} color="inherit">
+          <IconButton
+            onClick={colorMode.toggleColorMode}
+            color="inherit"
+            aria-label={themeToggleLabel}
+          >
             {colorMode.mode === 'dark' ? (
               <Brightness7Icon />
             ) : (
@@ -167,7 +183,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <Box
         component="nav"
         sx={{ width: { sm: drawerWidth }, flexShrink: { sm: 0 } }}
-        aria-label="mailbox folders"
+        aria-label="Primary navigation"
       >
         <Drawer
           variant="temporary"
@@ -202,6 +218,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       </Box>
       <Box
         component="main"
+        id="main-content"
         sx={{
           flexGrow: 1,
           p: 3,

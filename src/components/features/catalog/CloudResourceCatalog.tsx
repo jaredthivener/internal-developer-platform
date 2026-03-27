@@ -12,100 +12,25 @@ import {
   Stack,
   Typography,
 } from '@mui/material';
-import Link from 'next/link';
 import HubOutlinedIcon from '@mui/icons-material/HubOutlined';
 import StorageRoundedIcon from '@mui/icons-material/StorageRounded';
 import DnsRoundedIcon from '@mui/icons-material/DnsRounded';
 import DeviceHubRoundedIcon from '@mui/icons-material/DeviceHubRounded';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import ShieldOutlinedIcon from '@mui/icons-material/ShieldOutlined';
+import ButtonLink from '@/components/ui/ButtonLink';
+import {
+  serviceCatalogEntries,
+  serviceCostWatchlist,
+  serviceSecuritySignals,
+} from '@/lib/catalog/servicePortfolio';
 
-const catalogEntries = [
-  {
-    name: 'Azure Kubernetes Service',
-    category: 'Compute platform',
-    summary:
-      'Low-cost clusters for the portal, Crossplane control plane, and tenant workloads.',
-    owner: 'Platform Runtime',
-    regions: '1 region',
-    services: '2 clusters',
-    monthlyCost: '$57',
-    security: 'OIDC and workload identity enabled',
-    health: 91,
-    icon: <HubOutlinedIcon fontSize="small" />,
-    actionLabel: 'Coming soon',
-    href: null,
-  },
-  {
-    name: 'Azure Storage',
-    category: 'Storage',
-    summary:
-      'Blob and file storage backing state snapshots, documentation assets, and logs.',
-    owner: 'Platform Runtime',
-    regions: '1 region',
-    services: '4 accounts',
-    monthlyCost: '$19',
-    security: '100% encryption with soft delete',
-    health: 95,
-    icon: <StorageRoundedIcon fontSize="small" />,
-    actionLabel: 'Open Azure Storage Workflow',
-    href: '/catalog/azure-storage',
-  },
-  {
-    name: 'Azure Database for PostgreSQL',
-    category: 'Data services',
-    summary:
-      'Flexible Server instances for portal state, metadata, and operational reporting.',
-    owner: 'Persistence Guild',
-    regions: '1 region',
-    services: '3 servers',
-    monthlyCost: '$38',
-    security: 'Private access on 2 of 3 servers',
-    health: 84,
-    icon: <DnsRoundedIcon fontSize="small" />,
-    actionLabel: 'Coming soon',
-    href: null,
-  },
-  {
-    name: 'Azure Virtual Network',
-    category: 'Networking',
-    summary:
-      'Segmented hub-and-spoke network boundaries for ingress, AKS, and managed data services.',
-    owner: 'Cloud Foundation',
-    regions: '1 region',
-    services: '5 VNets',
-    monthlyCost: '$11',
-    security: '96% NSG policy compliance',
-    health: 97,
-    icon: <DeviceHubRoundedIcon fontSize="small" />,
-    actionLabel: 'Coming soon',
-    href: null,
-  },
-];
-
-const costWatchlist = [
-  {
-    label: 'AKS compute spend',
-    detail:
-      'Automatic system capacity remains inside credit budget, but add-on usage is trending upward.',
-  },
-  {
-    label: 'PostgreSQL idle capacity',
-    detail:
-      'One dev Flexible Server is oversized for current traffic and can move down a SKU.',
-  },
-  {
-    label: 'Blob retention growth',
-    detail:
-      'Diagnostic storage is the largest unplanned cost driver under the current credit cap.',
-  },
-];
-
-const securitySignals = [
-  'Public network access left enabled on one PostgreSQL server.',
-  'Two AKS namespaces still need workload identity migration off static secrets.',
-  'One virtual network subnet is missing the newest egress restriction policy.',
-];
+const catalogEntryIcons = {
+  aks: <HubOutlinedIcon fontSize="small" />,
+  storage: <StorageRoundedIcon fontSize="small" />,
+  postgres: <DnsRoundedIcon fontSize="small" />,
+  network: <DeviceHubRoundedIcon fontSize="small" />,
+} as const;
 
 export default function CloudResourceCatalog() {
   return (
@@ -127,7 +52,7 @@ export default function CloudResourceCatalog() {
                   component="h3"
                   sx={{ fontWeight: 600 }}
                 >
-                  Azure Resource Catalog
+                  Service Catalog
                 </Typography>
                 <Typography
                   variant="body1"
@@ -136,12 +61,13 @@ export default function CloudResourceCatalog() {
                 >
                   Browse platform-owned services by control plane area, see
                   where they operate, and understand current cost, posture, and
-                  health before opening a resource workflow.
+                  health before opening a live workflow or reviewing a staged
+                  service domain.
                 </Typography>
               </Box>
 
               <Grid container spacing={2}>
-                {catalogEntries.map((entry) => {
+                {serviceCatalogEntries.map((entry) => {
                   const isWorkflowAvailable = Boolean(entry.href);
 
                   return (
@@ -181,7 +107,7 @@ export default function CloudResourceCatalog() {
                                   backgroundColor: 'rgba(138, 180, 248, 0.14)',
                                 }}
                               >
-                                {entry.icon}
+                                {catalogEntryIcons[entry.icon]}
                               </Box>
                               <Box>
                                 <Typography
@@ -199,11 +125,31 @@ export default function CloudResourceCatalog() {
                                 </Typography>
                               </Box>
                             </Stack>
-                            <Chip
-                              label={entry.owner}
-                              size="small"
-                              variant="outlined"
-                            />
+                            <Stack spacing={1} alignItems="flex-end">
+                              <Chip
+                                label={entry.owner}
+                                size="small"
+                                variant="outlined"
+                              />
+                              <Chip
+                                label={
+                                  entry.workflow.status === 'ready'
+                                    ? 'Workflow ready'
+                                    : 'Planned'
+                                }
+                                size="small"
+                                color={
+                                  entry.workflow.status === 'ready'
+                                    ? 'success'
+                                    : 'default'
+                                }
+                                variant={
+                                  entry.workflow.status === 'ready'
+                                    ? 'filled'
+                                    : 'outlined'
+                                }
+                              />
+                            </Stack>
                           </Stack>
 
                           <Typography variant="body2" color="text.secondary">
@@ -222,7 +168,10 @@ export default function CloudResourceCatalog() {
                                 variant="body2"
                                 sx={{ fontWeight: 600 }}
                               >
-                                {entry.services}
+                                {entry.serviceCount}{' '}
+                                {entry.serviceCount === 1
+                                  ? 'service'
+                                  : 'services'}
                               </Typography>
                             </Grid>
                             <Grid size={{ xs: 6 }}>
@@ -236,7 +185,8 @@ export default function CloudResourceCatalog() {
                                 variant="body2"
                                 sx={{ fontWeight: 600 }}
                               >
-                                {entry.regions}
+                                {entry.regionCount}{' '}
+                                {entry.regionCount === 1 ? 'region' : 'regions'}
                               </Typography>
                             </Grid>
                             <Grid size={{ xs: 6 }}>
@@ -303,24 +253,23 @@ export default function CloudResourceCatalog() {
 
                           <Box>
                             {entry.href ? (
-                              <Button
+                              <ButtonLink
                                 fullWidth
-                                component={Link}
                                 href={entry.href}
                                 variant="contained"
                                 disableElevation
-                                aria-label={entry.actionLabel}
+                                aria-label={entry.workflow.actionLabel}
                               >
-                                {entry.actionLabel}
-                              </Button>
+                                {entry.workflow.actionLabel}
+                              </ButtonLink>
                             ) : (
                               <Button
                                 fullWidth
                                 variant="outlined"
                                 disabled={!isWorkflowAvailable}
-                                aria-label={entry.actionLabel}
+                                aria-label={entry.workflow.actionLabel}
                               >
-                                {entry.actionLabel}
+                                {entry.workflow.actionLabel}
                               </Button>
                             )}
                           </Box>
@@ -365,7 +314,7 @@ export default function CloudResourceCatalog() {
                 </Stack>
 
                 <Stack spacing={2} divider={<Divider flexItem />}>
-                  {costWatchlist.map((item) => (
+                  {serviceCostWatchlist.map((item) => (
                     <Box key={item.label}>
                       <Typography variant="body2" sx={{ fontWeight: 600 }}>
                         {item.label}
@@ -412,7 +361,7 @@ export default function CloudResourceCatalog() {
                 </Stack>
 
                 <Stack spacing={1.5}>
-                  {securitySignals.map((signal) => (
+                  {serviceSecuritySignals.map((signal) => (
                     <Box
                       key={signal}
                       sx={{

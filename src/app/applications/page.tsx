@@ -7,6 +7,7 @@ import {
   Stack,
   Typography,
 } from '@mui/material';
+import PageHeader, { pageSectionSx } from '@/components/layout/PageHeader';
 
 const applications = [
   {
@@ -34,35 +35,11 @@ const applications = [
 
 export default function ApplicationsPage() {
   return (
-    <Box sx={{ maxWidth: 1440, margin: '0 auto', width: '100%' }}>
-      <Box
-        sx={{
-          mb: 4.5,
-          px: { xs: 0.5, md: 0 },
-        }}
-      >
-        <Stack spacing={1.25}>
-          <Typography
-            variant="h3"
-            component="h1"
-            sx={{
-              fontWeight: 600,
-              color: 'text.primary',
-              letterSpacing: '-0.03em',
-            }}
-          >
-            Applications
-          </Typography>
-          <Typography
-            variant="body1"
-            color="text.secondary"
-            sx={{ maxWidth: 840 }}
-          >
-            Track onboarding status, runtime ownership, and delivery readiness
-            for the internal applications that rely on the platform.
-          </Typography>
-        </Stack>
-      </Box>
+    <Box sx={pageSectionSx}>
+      <PageHeader
+        title="Applications"
+        description="Track onboarding status, runtime ownership, and delivery readiness for the internal applications that rely on the platform."
+      />
 
       <Stack spacing={3}>
         <Typography variant="h5" component="h2" sx={{ fontWeight: 600 }}>

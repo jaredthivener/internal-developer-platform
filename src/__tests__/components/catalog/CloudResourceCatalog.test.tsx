@@ -11,7 +11,7 @@ describe('CloudResourceCatalog', () => {
       screen.getByRole('heading', { name: /^catalog$/i })
     ).toBeInTheDocument();
     expect(
-      screen.getByRole('heading', { name: /azure resource catalog/i })
+      screen.getByRole('heading', { name: /service catalog/i })
     ).toBeInTheDocument();
     expect(
       screen.getByText(/browse platform-owned services by control plane area/i)
@@ -22,7 +22,7 @@ describe('CloudResourceCatalog', () => {
     render(<CloudResourceCatalog />);
 
     expect(screen.getByText('Azure Kubernetes Service')).toBeInTheDocument();
-    expect(screen.getByText('Azure Storage')).toBeInTheDocument();
+    expect(screen.getByText('Azure Storage Accounts')).toBeInTheDocument();
     expect(
       screen.getByText('Azure Database for PostgreSQL')
     ).toBeInTheDocument();
@@ -48,18 +48,20 @@ describe('CloudResourceCatalog', () => {
     render(<CloudResourceCatalog />);
 
     expect(
-      screen.getByRole('link', { name: /open azure storage workflow/i })
+      screen.getByRole('link', { name: /open storage account workflow/i })
     ).toBeInTheDocument();
     expect(
       screen.getAllByRole('button', { name: /coming soon/i })
     ).toHaveLength(3);
+    expect(screen.getByText(/workflow ready/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/^planned$/i)).toHaveLength(3);
   });
 
   it('links the azure storage card to the catalog workflow route', () => {
     render(<CloudResourceCatalog />);
 
     expect(
-      screen.getByRole('link', { name: /open azure storage workflow/i })
+      screen.getByRole('link', { name: /open storage account workflow/i })
     ).toHaveAttribute('href', '/catalog/azure-storage');
   });
 });

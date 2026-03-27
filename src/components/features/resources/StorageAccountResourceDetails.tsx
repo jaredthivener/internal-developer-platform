@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Alert,
@@ -14,7 +14,6 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
-  Divider,
   Grid,
   Stack,
   Typography,
@@ -29,6 +28,7 @@ import StorageRoundedIcon from '@mui/icons-material/StorageRounded';
 import SyncRoundedIcon from '@mui/icons-material/SyncRounded';
 import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded';
 import { formatObservationClassification } from '@/lib/observations/presentation';
+import { azureStorageAccountResourceKind } from '@/lib/resources/managedResourceKind';
 
 const SYNC_REQUEST_ANNOTATION = 'idp.jared.io/last-sync-requested-at';
 
@@ -163,6 +163,8 @@ export default function StorageAccountResourceDetails({
 }: {
   resourceName: string;
 }) {
+  const resourceKind = azureStorageAccountResourceKind;
+  const observationsPathname = resourceKind.observationsPathname;
   const router = useRouter();
   const [resource, setResource] =
     useState<StorageAccountObservationDetail | null>(null);
@@ -174,18 +176,21 @@ export default function StorageAccountResourceDetails({
   const [error, setError] = useState<string | null>(null);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
 
-  async function loadResource(refresh = false) {
-    const response = await fetch(
-      `/api/observations/storage-accounts/${encodeURIComponent(resourceName)}${refresh ? '?refresh=true' : ''}`
-    );
-    const data = await response.json();
+  const loadResource = useCallback(
+    async (refresh = false) => {
+      const response = await fetch(
+        `${observationsPathname}/${encodeURIComponent(resourceName)}${refresh ? '?refresh=true' : ''}`
+      );
+      const data = await response.json();
 
-    if (!response.ok) {
-      throw new Error(data.error || 'Failed to load storage account details');
-    }
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to load storage account details');
+      }
 
-    return data.data as StorageAccountObservationDetail;
-  }
+      return data.data as StorageAccountObservationDetail;
+    },
+    [observationsPathname, resourceName]
+  );
 
   useEffect(() => {
     let isActive = true;
@@ -221,7 +226,7 @@ export default function StorageAccountResourceDetails({
     return () => {
       isActive = false;
     };
-  }, [resourceName]);
+  }, [loadResource]);
 
   async function handleDelete() {
     setConfirmOpen(false);
@@ -236,9 +241,9 @@ export default function StorageAccountResourceDetails({
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          group: 'storage.azure.upbound.io',
-          version: 'v1beta1',
-          plural: 'accounts',
+          group: resourceKind.crossplane.group,
+          version: resourceKind.crossplane.version,
+          plural: resourceKind.crossplane.plural,
           name: resourceName,
         }),
       });
@@ -300,9 +305,9 @@ export default function StorageAccountResourceDetails({
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          group: 'storage.azure.upbound.io',
-          version: 'v1beta1',
-          plural: 'accounts',
+          group: resourceKind.crossplane.group,
+          version: resourceKind.crossplane.version,
+          plural: resourceKind.crossplane.plural,
           name: resourceName,
           patch: {
             metadata: {
@@ -367,7 +372,7 @@ export default function StorageAccountResourceDetails({
   }
 
   if (!resource) {
-    return <Alert severity="warning">Storage account not found.</Alert>;
+    return <Alert severity="warning">Managed resource not found.</Alert>;
   }
 
   const classification = resource.classification ?? {
@@ -464,6 +469,9 @@ export default function StorageAccountResourceDetails({
                           sx={{ fontWeight: 600, lineHeight: 1.1 }}
                         >
                           {resource.resourceName || resourceName}
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          {resourceKind.displayName}
                         </Typography>
                       </Box>
                     </Stack>

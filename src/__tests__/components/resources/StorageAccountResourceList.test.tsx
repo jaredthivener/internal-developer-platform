@@ -64,6 +64,7 @@ describe('StorageAccountResourceList', () => {
     expect(
       await screen.findByRole('heading', { name: /devstorealpha01/i })
     ).toBeInTheDocument();
+    expect(screen.getByText(/^Azure Storage Account$/i)).toBeInTheDocument();
     expect(screen.getByText(/idp-crossplane-smoke/i)).toBeInTheDocument();
     expect(screen.getByText(/eastus2/i)).toBeInTheDocument();
     expect(screen.getByText(/in sync/i)).toBeInTheDocument();
@@ -88,10 +89,40 @@ describe('StorageAccountResourceList', () => {
     render(<StorageAccountResourceList />);
 
     expect(
-      await screen.findByText(/no storage accounts have been provisioned yet/i)
+      await screen.findByText(/no managed resources are available yet/i)
     ).toBeInTheDocument();
     expect(
-      screen.getByRole('link', { name: /open the catalog to create one/i })
+      screen.getByText(
+        /storage accounts created from the catalog will appear here first/i
+      )
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('link', { name: /open the storage workflow/i })
+    ).toHaveAttribute('href', '/catalog/azure-storage');
+  });
+
+  it('keeps the empty state tied to the live storage workflow descriptor', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        scan: {
+          source: 'crossplane+azure',
+          observedAt: '2026-03-22T20:00:00Z',
+          cacheTtlSeconds: 300,
+        },
+        data: [],
+      }),
+    } as Response);
+
+    render(<StorageAccountResourceList />);
+
+    expect(
+      await screen.findByText(
+        /storage accounts created from the catalog will appear here first/i
+      )
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('link', { name: /open the storage workflow/i })
     ).toHaveAttribute('href', '/catalog/azure-storage');
   });
 

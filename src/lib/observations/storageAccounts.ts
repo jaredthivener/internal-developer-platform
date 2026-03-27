@@ -523,6 +523,10 @@ export async function getStorageAccountObservationByName(
   resourceName: string,
   options: ObservationOptions = {}
 ): Promise<StorageAccountObservationsResponse<StorageAccountObservationDetail> | null> {
+  if (options.forceRefresh) {
+    cachedObservations = null;
+  }
+
   if (shouldUseCrossplaneMockMode()) {
     const response = buildMockObservationResponse();
     const match = response.data.find(

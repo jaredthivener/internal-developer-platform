@@ -1,26 +1,51 @@
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import AppLayout from '@/components/layout/AppLayout';
 
 const mockUsePathname = vi.fn();
+const mockToggleColorMode = vi.fn();
+const mockUseThemeMode = vi.fn();
 
 vi.mock('next/navigation', () => ({
   usePathname: () => mockUsePathname(),
 }));
 
-vi.mock('@/app/Providers', () => ({
-  ThemeModeContext: {
-    Provider: ({ children }: { children: React.ReactNode }) => children,
-    _currentValue: {
-      toggleColorMode: vi.fn(),
-      mode: 'dark',
-    },
-  },
+vi.mock('@/components/layout/themeMode', () => ({
+  useThemeMode: () => mockUseThemeMode(),
 }));
 
 describe('AppLayout', () => {
+  it('announces and triggers the theme toggle action', async () => {
+    const user = userEvent.setup();
+
+    mockUsePathname.mockReturnValue('/settings');
+    mockUseThemeMode.mockReturnValue({
+      toggleColorMode: mockToggleColorMode,
+      mode: 'dark',
+    });
+
+    render(
+      <AppLayout>
+        <div>Page Content</div>
+      </AppLayout>
+    );
+
+    const toggleButton = screen.getByRole('button', {
+      name: /switch to light theme/i,
+    });
+
+    await user.click(toggleButton);
+
+    expect(mockToggleColorMode).toHaveBeenCalledTimes(1);
+  });
+
   it('renders the left navigation with the resources item', () => {
     mockUsePathname.mockReturnValue('/catalog');
+    mockUseThemeMode.mockReturnValue({
+      toggleColorMode: mockToggleColorMode,
+      mode: 'dark',
+    });
 
     render(
       <AppLayout>
@@ -53,6 +78,10 @@ describe('AppLayout', () => {
 
   it('marks catalog as the active navigation item for catalog routes', () => {
     mockUsePathname.mockReturnValue('/catalog/azure-storage');
+    mockUseThemeMode.mockReturnValue({
+      toggleColorMode: mockToggleColorMode,
+      mode: 'dark',
+    });
 
     render(
       <AppLayout>
@@ -71,6 +100,10 @@ describe('AppLayout', () => {
 
   it('marks settings as the active navigation item for settings routes', () => {
     mockUsePathname.mockReturnValue('/settings');
+    mockUseThemeMode.mockReturnValue({
+      toggleColorMode: mockToggleColorMode,
+      mode: 'dark',
+    });
 
     render(
       <AppLayout>
@@ -90,6 +123,10 @@ describe('AppLayout', () => {
 
   it('marks resources as the active navigation item for resource routes', () => {
     mockUsePathname.mockReturnValue('/resources/devstorealpha01');
+    mockUseThemeMode.mockReturnValue({
+      toggleColorMode: mockToggleColorMode,
+      mode: 'dark',
+    });
 
     render(
       <AppLayout>

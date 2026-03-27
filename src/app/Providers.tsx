@@ -1,22 +1,74 @@
 'use client';
 
 import { ThemeProvider, createTheme, CssBaseline } from '@mui/material';
+import type { PaletteMode } from '@mui/material/styles';
 import { SessionProvider } from 'next-auth/react';
-import React, { ReactNode, createContext, useMemo, useState } from 'react';
+import {
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useSyncExternalStore,
+} from 'react';
+import {
+  THEME_MODE_STORAGE_KEY,
+  ThemeModeContext,
+  type ThemeModeContextValue,
+} from '@/components/layout/themeMode';
 
-// Create a context so deep components can toggle the theme
-export const ThemeModeContext = createContext({
-  toggleColorMode: () => {},
-  mode: 'dark',
-});
+const THEME_MODE_EVENT = 'idp:theme-mode-change';
+
+function isPaletteMode(value: string | null): value is PaletteMode {
+  return value === 'light' || value === 'dark';
+}
+
+function getStoredThemeMode(): PaletteMode {
+  const savedMode = window.localStorage.getItem(THEME_MODE_STORAGE_KEY);
+
+  return isPaletteMode(savedMode) ? savedMode : 'dark';
+}
+
+function subscribeToThemeMode(onStoreChange: () => void) {
+  function handleThemeModeChange() {
+    onStoreChange();
+  }
+
+  window.addEventListener('storage', handleThemeModeChange);
+  window.addEventListener(THEME_MODE_EVENT, handleThemeModeChange);
+
+  return () => {
+    window.removeEventListener('storage', handleThemeModeChange);
+    window.removeEventListener(THEME_MODE_EVENT, handleThemeModeChange);
+  };
+}
+
+function getThemeModeSnapshot(): PaletteMode {
+  return getStoredThemeMode();
+}
+
+function getServerThemeModeSnapshot(): PaletteMode {
+  return 'dark';
+}
+
+function persistThemeMode(mode: PaletteMode) {
+  window.localStorage.setItem(THEME_MODE_STORAGE_KEY, mode);
+  window.dispatchEvent(new Event(THEME_MODE_EVENT));
+}
 
 export default function Providers({ children }: { children: ReactNode }) {
-  const [mode, setMode] = useState<'light' | 'dark'>('dark');
+  const mode = useSyncExternalStore(
+    subscribeToThemeMode,
+    getThemeModeSnapshot,
+    getServerThemeModeSnapshot
+  );
 
-  const colorMode = useMemo(
+  useEffect(() => {
+    document.documentElement.style.colorScheme = mode;
+  }, [mode]);
+
+  const colorMode = useMemo<ThemeModeContextValue>(
     () => ({
       toggleColorMode: () => {
-        setMode((prevMode) => (prevMode === 'light' ? 'dark' : 'light'));
+        persistThemeMode(mode === 'light' ? 'dark' : 'light');
       },
       mode,
     }),
@@ -45,7 +97,8 @@ export default function Providers({ children }: { children: ReactNode }) {
               }),
         },
         typography: {
-          fontFamily: '"Inter", "Roboto", "Helvetica", "Arial", sans-serif',
+          fontFamily:
+            'var(--font-geist-sans), "Segoe UI", "Helvetica Neue", Arial, sans-serif',
           h5: { fontWeight: 500, letterSpacing: '-0.5px' },
           h6: { fontWeight: 500, letterSpacing: '-0.5px' },
           button: { textTransform: 'none', fontWeight: 500 },

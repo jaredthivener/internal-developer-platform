@@ -6,13 +6,17 @@
     "dev": "next dev",
     "dev:local": "NEXTAUTH_URL=http://localhost:3000 NEXTAUTH_SECRET=local-dev-only-secret IDP_ALLOW_OFFLINE_K8S=true next dev",
     "build": "next build",
+    "prepare:standalone": "mkdir -p .next/standalone/.next && rm -rf .next/standalone/.next/static && cp -R .next/static .next/standalone/.next/static && if [ -d public ]; then rm -rf .next/standalone/public && cp -R public .next/standalone/public; fi",
     "start": "node .next/standalone/server.js",
-    "start:local": "npm run build && NEXTAUTH_URL=http://localhost:3000 NEXTAUTH_SECRET=local-dev-only-secret IDP_ALLOW_OFFLINE_K8S=true next start",
+    "start:local": "npm run build && npm run prepare:standalone && PORT=3000 NEXTAUTH_URL=http://localhost:3000 NEXTAUTH_SECRET=local-dev-only-secret IDP_ALLOW_OFFLINE_K8S=true node .next/standalone/server.js",
+    "start:e2e": "npm run prepare:standalone && PORT=3100 NEXTAUTH_URL=http://127.0.0.1:3100 NEXTAUTH_SECRET=local-dev-only-secret IDP_ALLOW_OFFLINE_K8S=true node .next/standalone/server.js",
     "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
     "docs:dev": "npm --prefix docs run start",
     "docs:dev:local": "npm --prefix docs run dev:local",
     "docs:build": "npm --prefix docs run build",
     "test": "vitest run",
+    "test:e2e": "playwright test",
     "test:watch": "vitest",
     "format": "prettier --write .",
     "prepare": "husky"
@@ -27,12 +31,13 @@
     "@mui/material": "^7.3.9",
     "@mui/material-nextjs": "^7.3.9",
     "@mui/system": "^7.3.9",
-    "next": "16.2.0",
+    "next": "^16.2.1",
     "next-auth": "^4.24.13",
     "react": "19.2.4",
     "react-dom": "19.2.4"
   },
   "devDependencies": {
+    "@playwright/test": "^1.54.2",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
@@ -42,14 +47,36 @@
     "@types/react-dom": "^19",
     "@vitejs/plugin-react": "^6.0.1",
     "eslint": "^9",
-    "eslint-config-next": "16.2.0",
+    "eslint-config-next": "^16.2.1",
     "eslint-config-prettier": "^10.1.8",
     "husky": "^9.1.7",
-    "jsdom": "^29.0.0",
+    "jsdom": "^29.0.1",
     "lint-staged": "^16.4.0",
     "prettier": "^3.8.1",
     "typescript": "^5",
-    "vitest": "^4.1.0"
+    "vitest": "^4.1.2"
+  },
+  "overrides": {
+    "cosmiconfig": {
+      "yaml": "1.10.3"
+    },
+    "micromatch": {
+      "picomatch": "2.3.2"
+    },
+    "vite": {
+      "picomatch": "4.0.4",
+      "yaml": "2.8.3"
+    },
+    "tinyglobby": {
+      "picomatch": "4.0.4"
+    },
+    "lint-staged": {
+      "picomatch": "4.0.4",
+      "yaml": "2.8.3"
+    },
+    "vitest": {
+      "picomatch": "4.0.4"
+    }
   },
   "lint-staged": {
     "*.{js,jsx,ts,tsx}": [
