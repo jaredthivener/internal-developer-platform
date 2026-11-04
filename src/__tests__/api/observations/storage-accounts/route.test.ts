@@ -1,7 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
+import { getServerSession } from 'next-auth';
 import { GET } from '@/app/api/observations/storage-accounts/route';
 import { getStorageAccountObservations } from '@/lib/observations/storageAccounts';
+
+vi.mock('next-auth', () => ({
+  getServerSession: vi.fn(),
+}));
+
+vi.mock('@/lib/auth/authOptions', () => ({
+  authOptions: {},
+}));
 
 vi.mock('@/lib/observations/storageAccounts', () => ({
   getStorageAccountObservations: vi.fn(),
@@ -10,6 +19,9 @@ vi.mock('@/lib/observations/storageAccounts', () => ({
 describe('GET /api/observations/storage-accounts', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(getServerSession).mockResolvedValue({
+      user: { name: 'Test User' },
+    });
   });
 
   it('returns storage account observation summaries', async () => {
@@ -104,6 +116,18 @@ describe('GET /api/observations/storage-accounts', () => {
 
     expect(res.status).toBe(500);
     const body = await res.json();
-    expect(body.error).toBe('Azure observation failed');
+    expect(body.error).toBe('Failed to observe storage accounts');
+    expect(JSON.stringify(body)).not.toContain('Azure observation failed');
+  });
+
+  it('returns 401 without a session and never runs the observation', async () => {
+    vi.mocked(getServerSession).mockResolvedValueOnce(null);
+
+    const res = await GET(
+      new NextRequest('http://localhost:3000/api/observations/storage-accounts')
+    );
+
+    expect(res.status).toBe(401);
+    expect(getStorageAccountObservations).not.toHaveBeenCalled();
   });
 });

@@ -47,14 +47,14 @@ describe('POST /api/crossplane/resources', () => {
 
   it('should successfully create a custom resource and return 201', async () => {
     const mockPayload = {
-      group: 's3.aws.m.upbound.io',
+      group: 'storage.azure.upbound.io',
       version: 'v1beta1',
-      plural: 'buckets',
+      plural: 'accounts',
       payload: {
-        apiVersion: 's3.aws.m.upbound.io/v1beta1',
-        kind: 'Bucket',
-        metadata: { generateName: 'test-bucket-' },
-        spec: { forProvider: { region: 'us-east-1' } },
+        apiVersion: 'storage.azure.upbound.io/v1beta1',
+        kind: 'Account',
+        metadata: { generateName: 'teststore' },
+        spec: { forProvider: { location: 'westus3' } },
       },
     };
 
@@ -67,7 +67,7 @@ describe('POST /api/crossplane/resources', () => {
     );
 
     const mockCreateClusterCustomObject = vi.fn().mockResolvedValueOnce({
-      body: { metadata: { name: 'test-bucket-123' } },
+      body: { metadata: { name: 'teststore123' } },
     });
 
     vi.mocked(getCustomObjectsApi).mockReturnValueOnce({
@@ -82,9 +82,9 @@ describe('POST /api/crossplane/resources', () => {
       vi.mocked(getDesiredStateStore).mock.results[0]?.value;
 
     expect(mockCreateClusterCustomObject).toHaveBeenCalledWith({
-      group: 's3.aws.m.upbound.io',
+      group: 'storage.azure.upbound.io',
       version: 'v1beta1',
-      plural: 'buckets',
+      plural: 'accounts',
       body: expect.objectContaining({
         metadata: expect.objectContaining({
           annotations: expect.objectContaining({
@@ -95,13 +95,13 @@ describe('POST /api/crossplane/resources', () => {
     });
 
     expect(body.requestId).toEqual(expect.any(String));
-    expect(body.data.metadata.name).toBe('test-bucket-123');
+    expect(body.data.metadata.name).toBe('teststore123');
     expect(desiredStateStore.persistSubmission).toHaveBeenCalledWith(
       expect.objectContaining({
         requestId: body.requestId,
-        group: 's3.aws.m.upbound.io',
+        group: 'storage.azure.upbound.io',
         version: 'v1beta1',
-        plural: 'buckets',
+        plural: 'accounts',
         payload: expect.objectContaining({
           metadata: expect.objectContaining({
             annotations: expect.objectContaining({
@@ -114,7 +114,7 @@ describe('POST /api/crossplane/resources', () => {
     expect(desiredStateStore.markSubmissionApplied).toHaveBeenCalledWith(
       body.requestId,
       expect.objectContaining({
-        resourceName: 'test-bucket-123',
+        resourceName: 'teststore123',
       })
     );
   });

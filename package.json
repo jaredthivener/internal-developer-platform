@@ -2,6 +2,9 @@
   "name": "idp-temp",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "dev": "next dev",
     "dev:local": "NEXTAUTH_URL=http://localhost:3000 NEXTAUTH_SECRET=local-dev-only-secret IDP_ALLOW_OFFLINE_K8S=true next dev",
@@ -15,6 +18,7 @@
     "docs:dev": "npm --prefix docs run start",
     "docs:dev:local": "npm --prefix docs run dev:local",
     "docs:build": "npm --prefix docs run build",
+    "azure:up": "bash scripts/azure/bootstrap-aks-control-plane.sh && bash scripts/azure/deploy-platform-to-aks.sh",
     "test": "vitest run",
     "test:e2e": "playwright test",
     "test:watch": "vitest",

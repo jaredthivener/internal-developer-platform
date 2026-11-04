@@ -78,4 +78,41 @@ describe('getDesiredStateStore', () => {
     expect(fileSystemStoreCtor).toHaveBeenCalledWith(expectedPath);
     expect(store.rootDirectory).toBe(expectedPath);
   });
+
+  it('refuses to fall back to the pod filesystem in production', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('IDP_ALLOW_OFFLINE_K8S', '');
+    vi.stubEnv('IDP_DESIRED_STATE_AZURE_BLOB_ACCOUNT_URL', '');
+    vi.stubEnv('IDP_DESIRED_STATE_AZURE_BLOB_CONTAINER', '');
+    vi.stubEnv('IDP_DESIRED_STATE_FILESYSTEM_PATH', '');
+
+    const { getDesiredStateStore } = await import('@/lib/persistence/store');
+
+    expect(() => getDesiredStateStore()).toThrow(
+      /IDP_DESIRED_STATE_AZURE_BLOB_ACCOUNT_URL/
+    );
+  });
+
+  it('still allows the temp directory for offline mode on a production build (e2e)', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('IDP_ALLOW_OFFLINE_K8S', 'true');
+    vi.stubEnv('IDP_DESIRED_STATE_AZURE_BLOB_ACCOUNT_URL', '');
+    vi.stubEnv('IDP_DESIRED_STATE_AZURE_BLOB_CONTAINER', '');
+    vi.stubEnv('IDP_DESIRED_STATE_FILESYSTEM_PATH', '');
+
+    const fileSystemStoreCtor = vi.fn();
+    vi.doMock('@/lib/persistence/fileStore', () => ({
+      FileSystemDesiredStateStore: fileSystemStoreCtor,
+    }));
+    vi.doMock('@/lib/persistence/azureBlobStore', () => ({
+      AzureBlobDesiredStateStore: vi.fn(),
+    }));
+
+    const { getDesiredStateStore } = await import('@/lib/persistence/store');
+    getDesiredStateStore();
+
+    expect(fileSystemStoreCtor).toHaveBeenCalledWith(
+      path.join(os.tmpdir(), 'idp', 'desired-state-submissions')
+    );
+  });
 });

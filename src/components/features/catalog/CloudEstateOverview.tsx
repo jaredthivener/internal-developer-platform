@@ -14,52 +14,81 @@ import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import ShieldOutlinedIcon from '@mui/icons-material/ShieldOutlined';
 import WarningAmberOutlinedIcon from '@mui/icons-material/WarningAmberOutlined';
 import VerifiedOutlinedIcon from '@mui/icons-material/VerifiedOutlined';
-import { getServicePortfolioSummary } from '@/lib/catalog/servicePortfolio';
+import type { LivePortfolio } from '@/lib/catalog/livePortfolio';
+import { serviceCatalogEntries } from '@/lib/catalog/servicePortfolio';
 
 type MetricAccent = 'warning' | 'success' | 'error' | 'info';
 
-const portfolioSummary = getServicePortfolioSummary();
-
-const overviewMetrics: Array<{
+type OverviewMetric = {
   label: string;
   value: string;
   detail: string;
   accent: MetricAccent;
   icon: ReactNode;
-}> = [
-  {
-    label: 'Catalog domains',
-    value: String(portfolioSummary.catalogDomainCount),
-    detail:
-      'Compute, storage, data, and network services are tracked in one control surface.',
-    accent: 'info',
-    icon: <VerifiedOutlinedIcon fontSize="small" />,
-  },
-  {
-    label: 'Live workflows',
-    value: String(portfolioSummary.liveWorkflowCount),
-    detail:
-      'Storage account provisioning is ready today while the remaining service workflows are staged.',
-    accent: 'success',
-    icon: <ShieldOutlinedIcon fontSize="small" />,
-  },
-  {
-    label: 'Tracked services',
-    value: String(portfolioSummary.trackedServiceCount),
-    detail:
-      'Clusters, accounts, servers, and networks currently represented in the estate.',
-    accent: 'warning',
-    icon: <TrendingUpIcon fontSize="small" />,
-  },
-  {
-    label: 'Healthy domains',
-    value: `${portfolioSummary.healthyDomainCount} / ${portfolioSummary.catalogDomainCount}`,
-    detail:
-      'Three service domains are currently operating at or above the portfolio health target.',
-    accent: 'error',
-    icon: <WarningAmberOutlinedIcon fontSize="small" />,
-  },
-];
+};
+
+function buildOverviewMetrics({
+  inventory,
+  compliance,
+}: LivePortfolio): OverviewMetric[] {
+  const trackedResources = inventory
+    ? serviceCatalogEntries.reduce(
+        (total, entry) =>
+          total + (inventory[entry.resourceType]?.resources ?? 0),
+        0
+      )
+    : null;
+  const { compliant, evaluated } = compliance?.overall ?? {
+    compliant: 0,
+    evaluated: 0,
+  };
+
+  return [
+    {
+      label: 'Catalog domains',
+      value: String(serviceCatalogEntries.length),
+      detail:
+        'Compute, storage, data, and network services are tracked in one control surface.',
+      accent: 'info',
+      icon: <VerifiedOutlinedIcon fontSize="small" />,
+    },
+    {
+      label: 'Live workflows',
+      value: String(
+        serviceCatalogEntries.filter(
+          (entry) => entry.workflow.status === 'ready'
+        ).length
+      ),
+      detail: 'Self-service workflows available in the catalog today.',
+      accent: 'success',
+      icon: <ShieldOutlinedIcon fontSize="small" />,
+    },
+    {
+      label: 'Tracked resources',
+      value: trackedResources === null ? '—' : String(trackedResources),
+      detail:
+        trackedResources === null
+          ? 'Inventory is unavailable right now.'
+          : 'Clusters, storage accounts, PostgreSQL servers, and virtual networks in the subscription, from Azure Resource Graph.',
+      accent: 'warning',
+      icon: <TrendingUpIcon fontSize="small" />,
+    },
+    {
+      label: 'MCSB compliance',
+      value:
+        compliance && evaluated > 0
+          ? `${Math.round((compliant / evaluated) * 100)}%`
+          : '—',
+      detail: !compliance
+        ? 'Compliance data is unavailable right now.'
+        : evaluated === 0
+          ? 'Azure Policy has not finished its first evaluation yet.'
+          : `${compliant} of ${evaluated} resources compliant with the ${compliance.framework}.`,
+      accent: 'error',
+      icon: <WarningAmberOutlinedIcon fontSize="small" />,
+    },
+  ];
+}
 
 const accentStyles = {
   warning: {
@@ -80,7 +109,13 @@ const accentStyles = {
   },
 } as const;
 
-export default function CloudEstateOverview() {
+export default function CloudEstateOverview({
+  portfolio,
+}: {
+  portfolio: LivePortfolio;
+}) {
+  const overviewMetrics = buildOverviewMetrics(portfolio);
+
   return (
     <Card elevation={0} sx={{ overflow: 'hidden' }}>
       <CardContent sx={{ p: { xs: 3, md: 4 } }}>
@@ -100,9 +135,8 @@ export default function CloudEstateOverview() {
               sx={{ maxWidth: 720 }}
             >
               Platform-managed Azure footprint across compute, storage, data,
-              and networking. Use the catalog below to inspect ownership,
-              posture, and operating signals before drilling into the live
-              storage workflow or the staged domains behind it.
+              and networking, read live from Azure. Use the catalog to inspect
+              cost and compliance per service before opening a workflow.
             </Typography>
           </Stack>
 

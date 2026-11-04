@@ -1,0 +1,66 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata:
+  name: cert-manager
+  namespace: cluster-config
+spec:
+  interval: 24h
+  url: oci://quay.io/jetstack/charts/cert-manager
+  ref:
+    tag: v1.21.3
+  layerSelector:
+    mediaType: application/vnd.cncf.helm.chart.content.v1.tar+gzip
+    operation: copy
+---
+# Flux applies Helm releases server-side and forces field conflicts, so the
+# namespaceSelector AKS's admissions enforcer adds to the webhooks does not
+# block upgrades (it re-adds its system-namespace exclusions afterwards).
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: cert-manager
+  namespace: cluster-config
+spec:
+  interval: 30m
+  releaseName: cert-manager
+  targetNamespace: cert-manager
+  install:
+    createNamespace: true
+  chartRef:
+    kind: OCIRepository
+    name: cert-manager
+  values:
+    crds:
+      enabled: true
+    global:
+      leaderElection:
+        # The chart default (kube-system) is a managed namespace on AKS
+        # Automatic, where the aks-managed-protect-system-namespaces policy
+        # denies writes.
+        namespace: cert-manager
+    config:
+      apiVersion: controller.config.cert-manager.io/v1alpha1
+      kind: ControllerConfiguration
+      # Lets the ACME HTTP-01 solver attach HTTPRoutes to the portal's Gateway.
+      gatewayAPI:
+        enabled: true
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        memory: 256Mi
+    webhook:
+      resources:
+        requests:
+          cpu: 20m
+          memory: 64Mi
+        limits:
+          memory: 128Mi
+    cainjector:
+      resources:
+        requests:
+          cpu: 20m
+          memory: 128Mi
+        limits:
+          memory: 256Mi

@@ -1,0 +1,35 @@
+# Applies to every Crossplane package that does not set runtimeConfigRef.
+# All Azure provider pods run as one fixed ServiceAccount so a single Entra
+# federated credential (subject system:serviceaccount:crossplane-system:provider-azure)
+# covers them. The AKS workload identity webhook injects the projected token
+# into pods labelled azure.workload.identity/use=true.
+apiVersion: pkg.crossplane.io/v1beta1
+kind: DeploymentRuntimeConfig
+metadata:
+  name: default
+spec:
+  serviceAccountTemplate:
+    metadata:
+      name: provider-azure
+      annotations:
+        azure.workload.identity/client-id: ${CROSSPLANE_CLIENT_ID}
+  deploymentTemplate:
+    spec:
+      selector: {}
+      template:
+        metadata:
+          labels:
+            azure.workload.identity/use: 'true'
+        spec:
+          securityContext:
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: package-runtime
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+                limits:
+                  cpu: 500m
+                  memory: 512Mi

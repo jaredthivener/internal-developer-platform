@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { DefaultAzureCredential } from '@azure/identity';
+import { getAzureManagementToken } from '@/lib/azure/arm';
 import { getCustomObjectsApi } from '@/lib/crossplane/client';
 import { shouldUseCrossplaneMockMode } from '@/lib/crossplane/offlineMode';
 import { REQUEST_ID_ANNOTATION } from '@/lib/persistence/types';
@@ -282,19 +282,6 @@ function parseAzureStorageAccountLiveState(
         ? properties.publicNetworkAccess === 'Enabled'
         : undefined,
   };
-}
-
-async function getAzureManagementToken(): Promise<string | null> {
-  if (!process.env.AZURE_CLIENT_ID && !process.env.AZURE_TENANT_ID) {
-    return null;
-  }
-
-  const credential = new DefaultAzureCredential();
-  const token = await credential.getToken(
-    'https://management.azure.com/.default'
-  );
-
-  return token?.token || null;
 }
 
 async function fetchAzureStorageAccount(

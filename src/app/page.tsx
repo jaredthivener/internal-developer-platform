@@ -2,17 +2,20 @@ import { Box, Stack, Typography } from '@mui/material';
 import CloudEstateOverview from '@/components/features/catalog/CloudEstateOverview';
 import PageHeader, { pageSectionSx } from '@/components/layout/PageHeader';
 import ButtonLink from '@/components/ui/ButtonLink';
+import { getLivePortfolio } from '@/lib/catalog/livePortfolio';
 
-export default function Home() {
+export default async function Home() {
+  const portfolio = await getLivePortfolio();
+
   return (
     <Box sx={pageSectionSx}>
       <PageHeader
         title="Cloud Estate"
-        description="Explore the platform-owned Azure estate through a clean catalog view. Track service inventory, cost drift, security posture, and operating health without turning the dashboard into a resource creation screen."
+        description="Explore the platform-owned Azure estate through a clean catalog view. Track live service inventory, cost, and compliance without turning the dashboard into a resource creation screen."
       />
 
       <Stack spacing={3}>
-        <CloudEstateOverview />
+        <CloudEstateOverview portfolio={portfolio} />
 
         <Box
           sx={{

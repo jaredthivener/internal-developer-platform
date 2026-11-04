@@ -12,17 +12,19 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: idp-web
+        azure.workload.identity/use: 'true'
     spec:
       serviceAccountName: idp-web
       securityContext:
+        runAsNonRoot: true
         seccompProfile:
           type: RuntimeDefault
       nodeSelector:
-        kubernetes.io/arch: ARCH_PLACEHOLDER
+        kubernetes.io/arch: ${WORKLOAD_ARCH}
         kubernetes.io/os: linux
       containers:
         - name: idp-web
-          image: IMAGE_PLACEHOLDER
+          image: ${IMAGE_REF}
           imagePullPolicy: Always
           ports:
             - containerPort: 3000
@@ -30,15 +32,21 @@ spec:
           envFrom:
             - secretRef:
                 name: idp-app-env
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
           readinessProbe:
             httpGet:
-              path: /
+              path: /api/health
               port: http
             initialDelaySeconds: 10
             periodSeconds: 10
           livenessProbe:
             httpGet:
-              path: /
+              path: /api/health
               port: http
             initialDelaySeconds: 30
             periodSeconds: 20
@@ -49,3 +57,14 @@ spec:
             limits:
               cpu: 500m
               memory: 512Mi
+          volumeMounts:
+            # The root filesystem is read-only; Next.js writes its cache here.
+            - name: next-cache
+              mountPath: /app/.next/cache
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: next-cache
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}

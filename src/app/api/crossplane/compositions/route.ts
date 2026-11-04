@@ -1,9 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireSession } from '@/lib/auth/requireSession';
 import { getCustomObjectsApi } from '@/lib/crossplane/client';
 import { shouldUseCrossplaneMockMode } from '@/lib/crossplane/offlineMode';
 
 export async function GET(req?: NextRequest) {
   void req;
+
+  const unauthorized = await requireSession();
+  if (unauthorized) {
+    return unauthorized;
+  }
 
   if (shouldUseCrossplaneMockMode()) {
     return NextResponse.json(
@@ -28,30 +34,12 @@ export async function GET(req?: NextRequest) {
   }
 
   try {
-    // 1. Authentication Check (Bypassed for Dev/MVP Core functionality phase)
-    // const session = await getServerSession(authOptions);
-    // if (!session) {
-    //   return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    // }
-
-    // Optional: Extract fine-grained RBAC roles from `session.user` here before proceeding
-    // to strictly enforce Authorization to view infrastructure configs.
-
-    // 2. Fetch Data securely utilizing our encapsulated K8s client
-    const k8sClient =
-      getCustomObjectsApi() as /* eslint-disable-line @typescript-eslint/no-explicit-any */ any;
-
-    // Using listClusterCustomObject to query Crossplane Compositions (Cluster-level resources)
-    const response = await k8sClient.listClusterCustomObject(
-      'apiextensions.crossplane.io', // API Group
-      'v1', // API Version
-      'compositions' // Plural resource name
-    );
-
-    // 3. Sanitized Output
-    // Explicitly parse the body and return only what the client needs to avoid over-fetching
-    // mapping typed data over unstructured payload.
-    const items = (response.body as { items?: unknown[] }).items || [];
+    const response = await getCustomObjectsApi().listClusterCustomObject({
+      group: 'apiextensions.crossplane.io',
+      version: 'v1',
+      plural: 'compositions',
+    });
+    const items = (response as { items?: unknown[] }).items ?? [];
 
     return NextResponse.json({ data: items }, { status: 200 });
   } catch (error) {
@@ -60,8 +48,7 @@ export async function GET(req?: NextRequest) {
       error
     );
 
-    // 4. Secure Exception Handling (OWASP Top 10: Security Misconfiguration)
-    // Avoid leaking stack traces and Kubernetes API connection paths/tokens to the frontend
+    // Kubernetes error details stay in the server log.
     return NextResponse.json(
       { error: 'Internal Server Error' },
       { status: 500 }

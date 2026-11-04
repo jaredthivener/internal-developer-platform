@@ -22,7 +22,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version-file: .nvmrc
           cache: npm
           cache-dependency-path: package-lock.json
 
@@ -37,6 +37,20 @@ jobs:
 
       - name: Unit Tests
         run: npm run test
+
+      - name: Deploy Script Checks
+        run: |
+          shellcheck -x -S warning scripts/azure/*.sh
+          bash scripts/azure/scripts.test.sh
+
+      # Same Flux version as the microsoft.flux extension (1.26.x).
+      - name: Setup Flux CLI
+        uses: fluxcd/flux2/action@v2.9.6
+        with:
+          version: 2.9.6
+
+      - name: GitOps Manifest Checks
+        run: bash scripts/azure/gitops.test.sh
 
       - name: Build App
         run: npm run build

@@ -8,6 +8,9 @@ export default defineConfig({
     globals: true,
     environment: 'jsdom',
     setupFiles: './vitest.setup.ts',
+    // Node 25+ ships a global localStorage that shadows jsdom's; turn it off
+    // so component tests see the browser implementation on every Node version.
+    execArgv: ['--no-experimental-webstorage'],
     include: ['src/**/*.test.{ts,tsx,js,jsx}'],
     exclude: [...configDefaults.exclude, 'tests/e2e/**'],
     alias: {

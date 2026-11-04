@@ -22,7 +22,7 @@ describe('GET /api/crossplane/compositions', () => {
     vi.clearAllMocks();
   });
 
-  it.skip('should return 401 Unauthorized if user is not authenticated', async () => {
+  it('should return 401 Unauthorized if user is not authenticated', async () => {
     vi.mocked(getServerSession).mockResolvedValueOnce(null);
 
     const req = new NextRequest(
@@ -86,17 +86,16 @@ describe('GET /api/crossplane/compositions', () => {
       user: { name: 'Test User' },
     });
 
+    // @kubernetes/client-node 1.x resolves with the response body itself.
     const mockK8sResponse = {
-      body: {
-        items: [
-          {
-            metadata: { name: 'example-composition' },
-            spec: {
-              compositeTypeRef: { apiVersion: 'test/v1', kind: 'XTest' },
-            },
+      items: [
+        {
+          metadata: { name: 'example-composition' },
+          spec: {
+            compositeTypeRef: { apiVersion: 'test/v1', kind: 'XTest' },
           },
-        ],
-      },
+        },
+      ],
     };
 
     const mockListClusterCustomObject = vi
@@ -115,11 +114,11 @@ describe('GET /api/crossplane/compositions', () => {
     const body = await res.json();
 
     // Verify client configuration args mapping for Crossplane
-    expect(mockListClusterCustomObject).toHaveBeenCalledWith(
-      'apiextensions.crossplane.io',
-      'v1',
-      'compositions'
-    );
+    expect(mockListClusterCustomObject).toHaveBeenCalledWith({
+      group: 'apiextensions.crossplane.io',
+      version: 'v1',
+      plural: 'compositions',
+    });
 
     expect(body.data).toHaveLength(1);
     expect(body.data[0].metadata.name).toBe('example-composition');
