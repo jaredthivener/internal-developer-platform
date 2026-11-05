@@ -4,26 +4,41 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+# shellcheck source=scripts/azure/common.sh
+source "$SCRIPT_DIR/common.sh"
 
 RESOURCE_GROUP="${RESOURCE_GROUP:-idp-azure-rg}"
 LOCATION="${LOCATION:-westus3}"
 AKS_CLUSTER_NAME="${AKS_CLUSTER_NAME:-idp-aks-auto}"
 ACR_NAME="${ACR_NAME:-}"
 ACR_SKU="${ACR_SKU:-Basic}"
-AZURE_PROVIDER_VERSION="${AZURE_PROVIDER_VERSION:-v1.11.0}"
-SP_CREDENTIALS_FILE="${SP_CREDENTIALS_FILE:-$ROOT_DIR/.azure/${AKS_CLUSTER_NAME}-crossplane.json}"
-IDP_ENV_FILE="${IDP_ENV_FILE:-$ROOT_DIR/.env.local}"
+IDP_WEB_IDENTITY_NAME="${IDP_WEB_IDENTITY_NAME:-${AKS_CLUSTER_NAME}-idp-web}"
+CROSSPLANE_IDENTITY_NAME="${CROSSPLANE_IDENTITY_NAME:-${AKS_CLUSTER_NAME}-crossplane}"
+DESIRED_STATE_CONTAINER="${DESIRED_STATE_CONTAINER:-desired-state}"
+PORTAL_APP_NAME="${PORTAL_APP_NAME:-${AKS_CLUSTER_NAME}-portal}"
+PLATFORM_KEYVAULT_NAME="${PLATFORM_KEYVAULT_NAME:-}"
 IMAGE_PLATFORM="${IMAGE_PLATFORM:-}"
 IMAGE_NAME="${IMAGE_NAME:-idp-web}"
 IMAGE_TAG="${IMAGE_TAG:-$(date +%Y%m%d%H%M%S)}"
 SKIP_IMAGE_BUILD="${SKIP_IMAGE_BUILD:-false}"
 IMAGE_REF="${IMAGE_REF:-}"
-HELM_TIMEOUT="${HELM_TIMEOUT:-10m}"
 WORKLOAD_ARCH="${WORKLOAD_ARCH:-}"
-INGRESS_CLASS_NAME="${INGRESS_CLASS_NAME:-webapprouting.kubernetes.azure.com}"
-INGRESS_SERVICE_NAMESPACE="${INGRESS_SERVICE_NAMESPACE:-app-routing-system}"
-INGRESS_SERVICE_NAME="${INGRESS_SERVICE_NAME:-nginx}"
+# Flux (microsoft.flux extension) deploys everything in-cluster from this Git
+# repository and branch. Defaults: the origin remote and the checked-out branch.
+GITOPS_REPO_URL="${GITOPS_REPO_URL:-}"
+GITOPS_BRANCH="${GITOPS_BRANCH:-}"
+FLUX_CONFIG_NAME="${FLUX_CONFIG_NAME:-idp-platform}"
+# Must match the namespace of the Flux objects in platform/gitops.
+FLUX_NAMESPACE=cluster-config
+FLUX_TIMEOUT="${FLUX_TIMEOUT:-20m}"
+# Azure DNS label on the Gateway's public IP. Defaults to a stable value derived
+# from the subscription, resource group and cluster.
+DNS_LABEL="${DNS_LABEL:-}"
+# Defaults to <DNS_LABEL>.<LOCATION>.cloudapp.azure.com; set it for your own domain.
 INGRESS_HOST="${INGRESS_HOST:-}"
+# Let's Encrypt staging (https://acme-staging-v02.api.letsencrypt.org/directory)
+# avoids production rate limits while testing.
+ACME_SERVER="${ACME_SERVER:-https://acme-v02.api.letsencrypt.org/directory}"
 NEXTAUTH_EXTERNAL_URL="${NEXTAUTH_EXTERNAL_URL:-}"
 
 log() {
@@ -39,16 +54,12 @@ require_tool() {
   command -v "$1" >/dev/null 2>&1 || fail "$1 is required. Install it before running this script."
 }
 
-get_ingress_public_ip() {
-  kubectl -n "$INGRESS_SERVICE_NAMESPACE" get svc "$INGRESS_SERVICE_NAME" -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true
-}
-
 generate_acr_name() {
   local sanitized random_suffix
 
   sanitized="$(printf '%s' "$AKS_CLUSTER_NAME" | tr '[:upper:]' '[:lower:]' | tr -cd '[:alnum:]')"
   sanitized="${sanitized:0:30}"
-  random_suffix="$(LC_ALL=C tr -dc 'a-z0-9' </dev/urandom | head -c 6)"
+  random_suffix="$(openssl rand -hex 3)"
   printf '%s' "${sanitized}${random_suffix}"
 }
 
@@ -82,6 +93,24 @@ ensure_cluster_context() {
     --resource-group "$RESOURCE_GROUP" \
     --name "$AKS_CLUSTER_NAME" \
     --overwrite-existing >/dev/null
+  wait_for_cluster_authorization
+}
+
+# The managed Gateway API CRDs and the application routing Gateway API
+# implementation (GatewayClass approuting-istio). New AKS Automatic clusters on
+# 1.37 ship without them.
+ensure_gateway_addons() {
+  local state gateway_api istio
+  state="$(az aks show --resource-group "$RESOURCE_GROUP" --name "$AKS_CLUSTER_NAME" \
+    --query "join(' ', [to_string(ingressProfile.gatewayApi.installation), to_string(ingressProfile.webAppRouting.gatewayApiImplementations.appRoutingIstio.mode)])" -o tsv)"
+  log "Gateway add-on state (gatewayApi appRoutingIstio): $state"
+  read -r gateway_api istio <<<"$state"
+
+  if [[ "$gateway_api" != Standard || "$istio" != Enabled ]]; then
+    log "Enabling managed Gateway API and the application routing Gateway implementation"
+    az aks update --resource-group "$RESOURCE_GROUP" --name "$AKS_CLUSTER_NAME" \
+      --enable-gateway-api --enable-app-routing-istio --output none
+  fi
 }
 
 detect_workload_arch() {
@@ -103,34 +132,96 @@ detect_workload_arch() {
   log "Detected workload architecture $WORKLOAD_ARCH"
 }
 
-resolve_ingress_host() {
-  if [[ -n "$INGRESS_HOST" ]]; then
-    log "Using explicit ingress host $INGRESS_HOST"
-    return
+# Checks explicit inputs before anything touches Azure or the cluster.
+validate_inputs() {
+  if [[ -n "$DNS_LABEL" && ! "$DNS_LABEL" =~ ^[a-z][a-z0-9-]{1,61}[a-z0-9]$ ]]; then
+    fail "DNS_LABEL must be 3-63 lowercase letters, digits or hyphens, starting with a letter (got '$DNS_LABEL')."
   fi
-
-  local ingress_ip
-  ingress_ip="$(get_ingress_public_ip)"
-  [[ -n "$ingress_ip" ]] || fail "Unable to determine the ingress public IP from $INGRESS_SERVICE_NAMESPACE/$INGRESS_SERVICE_NAME. Set INGRESS_HOST explicitly and rerun."
-
-  INGRESS_HOST="idp.${ingress_ip}.sslip.io"
-  log "Using derived ingress host $INGRESS_HOST"
+  if [[ -n "$NEXTAUTH_EXTERNAL_URL" && "$NEXTAUTH_EXTERNAL_URL" != https://* ]]; then
+    fail "NEXTAUTH_EXTERNAL_URL must use https (got $NEXTAUTH_EXTERNAL_URL). Entra ID only accepts https redirect URIs outside localhost."
+  fi
 }
 
-resolve_nextauth_external_url() {
-  if [[ -n "$NEXTAUTH_EXTERNAL_URL" ]]; then
-    log "Using explicit NEXTAUTH external URL $NEXTAUTH_EXTERNAL_URL"
-    return
-  fi
+# Flux deploys the branch as it is on the remote, not this checkout. When the
+# tracked branch is the checked-out one, refuse to continue if they differ, so
+# a deploy never silently ships something other than what is in front of you.
+resolve_gitops_source() {
+  local current_branch remote_sha
+  current_branch="$(git -C "$ROOT_DIR" rev-parse --abbrev-ref HEAD)"
+  GITOPS_REPO_URL="${GITOPS_REPO_URL:-$(git -C "$ROOT_DIR" remote get-url origin)}"
+  GITOPS_BRANCH="${GITOPS_BRANCH:-$current_branch}"
 
-  resolve_ingress_host
-  NEXTAUTH_EXTERNAL_URL="http://$INGRESS_HOST"
-  log "Using derived NEXTAUTH external URL $NEXTAUTH_EXTERNAL_URL"
+  [[ "$GITOPS_REPO_URL" == https://* ]] \
+    || fail "GITOPS_REPO_URL must be an https URL of a public Git repository (got $GITOPS_REPO_URL)."
+
+  remote_sha="$(git -C "$ROOT_DIR" ls-remote "$GITOPS_REPO_URL" "refs/heads/$GITOPS_BRANCH" | cut -f1)"
+  [[ -n "$remote_sha" ]] \
+    || fail "Branch $GITOPS_BRANCH is not on $GITOPS_REPO_URL. Push it first: Flux deploys from the remote."
+
+  if [[ "$GITOPS_BRANCH" == "$current_branch" ]]; then
+    [[ "$remote_sha" == "$(git -C "$ROOT_DIR" rev-parse HEAD)" && -z "$(git -C "$ROOT_DIR" status --porcelain -- platform)" ]] \
+      || fail "Flux deploys $GITOPS_BRANCH as pushed to $GITOPS_REPO_URL, but this checkout differs (unpushed commits or uncommitted platform/ changes). Commit and push first."
+  fi
+  log "Flux will deploy $GITOPS_REPO_URL branch $GITOPS_BRANCH at $remote_sha"
 }
 
+# Entra ID only accepts https redirect URIs outside localhost, so the portal is
+# always published on https://INGRESS_HOST.
+# Stable per subscription, resource group and cluster, so reruns and recreated
+# Gateways keep the same hostname.
+default_dns_label() {
+  local digest
+  digest="$(printf '%s' "$AZURE_SUBSCRIPTION_ID/$RESOURCE_GROUP/$AKS_CLUSTER_NAME" | openssl dgst -sha256 -r | cut -c1-8)"
+  printf '%s-%s' "$(printf '%s' "$AKS_CLUSTER_NAME" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9-' | cut -c1-40)" "$digest"
+}
+
+resolve_public_endpoint() {
+  DNS_LABEL="${DNS_LABEL:-$(default_dns_label)}"
+  INGRESS_HOST="${INGRESS_HOST:-${DNS_LABEL}.${LOCATION}.cloudapp.azure.com}"
+  NEXTAUTH_EXTERNAL_URL="${NEXTAUTH_EXTERNAL_URL:-https://$INGRESS_HOST}"
+  log "Public URL: $NEXTAUTH_EXTERNAL_URL"
+}
+
+# Registers the NextAuth callback on the portal app registration, keeping any
+# redirect URIs that are already there.
+ensure_redirect_uri() {
+  local callback="${NEXTAUTH_EXTERNAL_URL%/}/api/auth/callback/azure-ad"
+  local existing=() uri=""
+  while IFS= read -r uri || [[ -n "$uri" ]]; do
+    [[ -n "$uri" ]] && existing+=("$uri")
+  done < <(az ad app show --id "$PORTAL_APP_ID" --query 'web.redirectUris[]' -o tsv)
+
+  for uri in "${existing[@]+"${existing[@]}"}"; do
+    [[ "$uri" == "$callback" ]] && return
+  done
+
+  log "Registering redirect URI $callback on $PORTAL_APP_NAME"
+  az ad app update --id "$PORTAL_APP_ID" --web-redirect-uris "${existing[@]+"${existing[@]}"}" "$callback" --output none
+}
+
+resolve_azure_identities() {
+  AZURE_TENANT_ID="$(az account show --query tenantId -o tsv)"
+  AZURE_SUBSCRIPTION_ID="$(az account show --query id -o tsv)"
+  CROSSPLANE_CLIENT_ID="$(az identity show --resource-group "$RESOURCE_GROUP" --name "$CROSSPLANE_IDENTITY_NAME" --query clientId -o tsv 2>/dev/null || true)"
+  IDP_WEB_CLIENT_ID="$(az identity show --resource-group "$RESOURCE_GROUP" --name "$IDP_WEB_IDENTITY_NAME" --query clientId -o tsv 2>/dev/null || true)"
+  DESIRED_STATE_STORAGE_ACCOUNT="$(az storage account list --resource-group "$RESOURCE_GROUP" --query "[?tags.\"idp-role\"=='desired-state'].name | [0]" -o tsv)"
+
+  [[ -n "$CROSSPLANE_CLIENT_ID" && -n "$IDP_WEB_CLIENT_ID" && -n "$DESIRED_STATE_STORAGE_ACCOUNT" ]] \
+    || fail "Managed identities or desired-state storage not found in $RESOURCE_GROUP. Run scripts/azure/bootstrap-aks-control-plane.sh first."
+
+  DESIRED_STATE_BLOB_URL="$(az storage account show --resource-group "$RESOURCE_GROUP" --name "$DESIRED_STATE_STORAGE_ACCOUNT" --query primaryEndpoints.blob -o tsv)"
+
+  PLATFORM_KEYVAULT_NAME="$(find_platform_keyvault)"
+  PORTAL_APP_ID="$(find_portal_app_id)"
+  [[ -n "$PLATFORM_KEYVAULT_NAME" && -n "$PORTAL_APP_ID" ]] \
+    || fail "Platform Key Vault or Entra app $PORTAL_APP_NAME not found. Run scripts/azure/bootstrap-aks-control-plane.sh first."
+}
+
+# idp-system holds the app secret, which must exist before Flux starts the app;
+# the Flux configuration namespace holds the settings Flux substitutes.
 ensure_namespaces() {
-  kubectl create namespace crossplane-system --dry-run=client -o yaml | kubectl apply -f - >/dev/null
-  kubectl create namespace idp-system --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+  kubectl create namespace idp-system --dry-run=client -o yaml | kubectl_apply >/dev/null
+  kubectl create namespace "$FLUX_NAMESPACE" --dry-run=client -o yaml | kubectl_apply >/dev/null
 }
 
 ensure_acr() {
@@ -157,63 +248,6 @@ ensure_acr() {
     --name "$AKS_CLUSTER_NAME" \
     --attach-acr "$ACR_NAME" \
     --output none >/dev/null 2>&1 || true
-}
-
-install_crossplane() {
-  log "Installing Crossplane into crossplane-system"
-  helm repo add crossplane-stable https://charts.crossplane.io/stable >/dev/null 2>&1 || true
-  helm repo update >/dev/null
-
-  if helm status crossplane -n crossplane-system >/dev/null 2>&1; then
-    log "Removing previous Crossplane Helm release metadata before manifest-based install"
-    helm uninstall crossplane -n crossplane-system >/dev/null 2>&1 || true
-  fi
-
-  helm template crossplane crossplane-stable/crossplane \
-    --namespace crossplane-system \
-    --values "$ROOT_DIR/platform/kubernetes/crossplane/values-aks-automatic.yaml" \
-    --set rbacManager.skipAggregatedClusterRoles=true \
-    | "$SCRIPT_DIR/helm-post-render-crossplane.rb" \
-    | kubectl apply -f -
-
-  kubectl -n crossplane-system rollout status deployment/crossplane --timeout=5m
-  kubectl -n crossplane-system rollout status deployment/crossplane-rbac-manager --timeout=5m
-}
-
-apply_crossplane_runtime_config() {
-  log "Applying default Crossplane deployment runtime config"
-  kubectl apply -f "$ROOT_DIR/platform/crossplane/configs/default-deployment-runtime-config.yaml"
-}
-
-apply_azure_providers() {
-  log "Applying Azure Crossplane provider packages"
-  sed "s|PROVIDER_VERSION_PLACEHOLDER|$AZURE_PROVIDER_VERSION|g" \
-    "$ROOT_DIR/platform/crossplane/providers/providers.yaml" | kubectl apply -f -
-
-  local provider
-  for provider in \
-    provider-azure-management \
-    provider-azure-network \
-    provider-azure-storage \
-    provider-azure-dbforpostgresql \
-    provider-azure-containerservice; do
-    kubectl wait --for=condition=Healthy --timeout=10m "provider.pkg.crossplane.io/$provider"
-  done
-}
-
-apply_crossplane_credentials() {
-  [[ -f "$SP_CREDENTIALS_FILE" ]] || fail "Crossplane credentials file not found at $SP_CREDENTIALS_FILE. Run the bootstrap script first or set SP_CREDENTIALS_FILE."
-
-  log "Creating Azure provider credentials secret"
-  kubectl -n crossplane-system create secret generic azure-provider-creds \
-    --from-file=creds="$SP_CREDENTIALS_FILE" \
-    --dry-run=client -o yaml | kubectl apply -f -
-
-  kubectl apply -f "$ROOT_DIR/platform/crossplane/configs/provider-config.yaml"
-  kubectl apply -f "$ROOT_DIR/platform/crossplane/configs/cluster-provider-config.yaml"
-
-  sed "s|LOCATION_PLACEHOLDER|$LOCATION|g" \
-    "$ROOT_DIR/platform/crossplane/examples/resourcegroup-smoke-test.yaml" | kubectl apply -f -
 }
 
 build_and_push_image() {
@@ -244,71 +278,127 @@ build_and_push_image() {
   "${cmd[@]}"
 }
 
+# Builds the app's Kubernetes secret from Key Vault and computed values only,
+# so no local env file (and no offline-mode flag) can leak into a cluster.
 create_app_env_secret() {
-  [[ -f "$IDP_ENV_FILE" ]] || fail "App environment file not found at $IDP_ENV_FILE. Create it from .env.example first."
+  # Global, not local: the EXIT trap must still see it if a later step fails.
+  temp_env_file="$(umask 077 && mktemp)"
+  trap 'rm -f "${temp_env_file:-}"' EXIT
 
-  resolve_nextauth_external_url
+  local nextauth_secret client_secret
+  nextauth_secret="$(az keyvault secret show --vault-name "$PLATFORM_KEYVAULT_NAME" --name nextauth-secret --query value -o tsv)"
+  client_secret="$(az keyvault secret show --vault-name "$PLATFORM_KEYVAULT_NAME" --name portal-client-secret --query value -o tsv)"
+  [[ -n "$nextauth_secret" && -n "$client_secret" ]] \
+    || fail "Key Vault $PLATFORM_KEYVAULT_NAME is missing nextauth-secret or portal-client-secret. Rerun the bootstrap script."
 
-  local temp_env_file
-  temp_env_file="$(mktemp)"
+  {
+    printf 'NEXTAUTH_URL=%s\n' "$NEXTAUTH_EXTERNAL_URL"
+    printf 'NEXTAUTH_SECRET=%s\n' "$nextauth_secret"
+    printf 'AZURE_AD_CLIENT_ID=%s\n' "$PORTAL_APP_ID"
+    printf 'AZURE_AD_CLIENT_SECRET=%s\n' "$client_secret"
+    printf 'AZURE_AD_TENANT_ID=%s\n' "$AZURE_TENANT_ID"
+    printf 'AZURE_SUBSCRIPTION_ID=%s\n' "$AZURE_SUBSCRIPTION_ID"
+    printf 'IDP_DESIRED_STATE_AZURE_BLOB_ACCOUNT_URL=%s\n' "$DESIRED_STATE_BLOB_URL"
+    printf 'IDP_DESIRED_STATE_AZURE_BLOB_CONTAINER=%s\n' "$DESIRED_STATE_CONTAINER"
+  } > "$temp_env_file"
+  unset nextauth_secret client_secret
 
-  grep -v '^NEXTAUTH_URL=' "$IDP_ENV_FILE" > "$temp_env_file" || true
-  printf 'NEXTAUTH_URL=%s\n' "$NEXTAUTH_EXTERNAL_URL" >> "$temp_env_file"
-
-  log "Creating application env secret from $IDP_ENV_FILE with NEXTAUTH_URL=$NEXTAUTH_EXTERNAL_URL"
+  log "Creating application env secret with NEXTAUTH_URL=$NEXTAUTH_EXTERNAL_URL"
   kubectl -n idp-system create secret generic idp-app-env \
     --from-env-file="$temp_env_file" \
-    --dry-run=client -o yaml | kubectl apply -f -
+    --dry-run=client -o yaml | kubectl_apply
 
   rm -f "$temp_env_file"
 }
 
-deploy_ingress() {
-  resolve_ingress_host
-
-  log "Deploying public ingress for host $INGRESS_HOST"
-  sed -e "s|INGRESS_CLASS_NAME_PLACEHOLDER|$INGRESS_CLASS_NAME|g" \
-      -e "s|INGRESS_HOST_PLACEHOLDER|$INGRESS_HOST|g" \
-    "$ROOT_DIR/platform/kubernetes/idp/ingress.yaml" | kubectl apply -f -
+# Values Flux substitutes for ${...} in platform/ (see platform/gitops). The
+# watch label makes Flux re-apply as soon as they change, e.g. a new image.
+write_platform_settings() {
+  log "Writing Flux settings (image $IMAGE_REF, host $INGRESS_HOST)"
+  kubectl -n "$FLUX_NAMESPACE" create configmap idp-platform-settings \
+    --from-literal=AZURE_TENANT_ID="$AZURE_TENANT_ID" \
+    --from-literal=AZURE_SUBSCRIPTION_ID="$AZURE_SUBSCRIPTION_ID" \
+    --from-literal=LOCATION="$LOCATION" \
+    --from-literal=CROSSPLANE_CLIENT_ID="$CROSSPLANE_CLIENT_ID" \
+    --from-literal=IDP_WEB_CLIENT_ID="$IDP_WEB_CLIENT_ID" \
+    --from-literal=IMAGE_REF="$IMAGE_REF" \
+    --from-literal=WORKLOAD_ARCH="$WORKLOAD_ARCH" \
+    --from-literal=DNS_LABEL="$DNS_LABEL" \
+    --from-literal=INGRESS_HOST="$INGRESS_HOST" \
+    --from-literal=ACME_SERVER="$ACME_SERVER" \
+    --dry-run=client -o yaml \
+    | kubectl label --local -f - reconcile.fluxcd.io/watch=Enabled -o yaml \
+    | kubectl_apply
 }
 
-deploy_idp() {
-  [[ -n "$IMAGE_REF" ]] || fail "IMAGE_REF is empty. Build the image first or set IMAGE_REF."
+# The Flux configuration installs the microsoft.flux extension on first use and
+# points one root Kustomization at platform/gitops/clusters/idp-aks-auto.
+ensure_flux_configuration() {
+  local common=(--resource-group "$RESOURCE_GROUP" --cluster-name "$AKS_CLUSTER_NAME" --cluster-type managedClusters --name "$FLUX_CONFIG_NAME")
+  if az k8s-configuration flux show "${common[@]}" --output none 2>/dev/null; then
+    log "Updating Flux configuration $FLUX_CONFIG_NAME to $GITOPS_REPO_URL branch $GITOPS_BRANCH"
+    az k8s-configuration flux update "${common[@]}" --url "$GITOPS_REPO_URL" --branch "$GITOPS_BRANCH" --output none
+  else
+    log "Creating Flux configuration $FLUX_CONFIG_NAME (installs the Flux extension on first use)"
+    az k8s-configuration flux create "${common[@]}" \
+      --namespace "$FLUX_NAMESPACE" --scope cluster \
+      --url "$GITOPS_REPO_URL" --branch "$GITOPS_BRANCH" \
+      --kustomization name=platform path=./platform/gitops/clusters/idp-aks-auto prune=true \
+      --output none
+  fi
+}
 
-  log "Applying IDP base resources"
-  kubectl apply -f "$ROOT_DIR/platform/kubernetes/idp/base.yaml"
+wait_for_platform() {
+  local ks attempt deployed=""
+  for ks in crossplane crossplane-providers crossplane-configs cert-manager idp; do
+    for attempt in $(seq 1 30); do
+      kubectl -n "$FLUX_NAMESPACE" get kustomization "$ks" >/dev/null 2>&1 && break
+      log "Waiting for Flux to create Kustomization $ks (attempt $attempt/30)"
+      sleep 10
+    done
+    log "Waiting for Flux Kustomization $ks to become Ready"
+    kubectl -n "$FLUX_NAMESPACE" wait --for=condition=Ready "kustomization/$ks" --timeout="$FLUX_TIMEOUT" \
+      || fail "Flux Kustomization $ks is not Ready. Check: kubectl -n $FLUX_NAMESPACE get kustomizations,helmreleases; kubectl -n $FLUX_NAMESPACE describe kustomization $ks"
+  done
 
-  create_app_env_secret
-
-  log "Deploying IDP app"
-  sed -e "s|IMAGE_PLACEHOLDER|$IMAGE_REF|g" \
-      -e "s|ARCH_PLACEHOLDER|$WORKLOAD_ARCH|g" \
-    "$ROOT_DIR/platform/kubernetes/idp/deployment.yaml" | kubectl apply -f -
-
+  # On a rerun the Kustomizations can already be Ready with the previous
+  # image; wait until Flux has applied this one.
+  for attempt in $(seq 1 60); do
+    deployed="$(kubectl -n idp-system get deployment idp-web -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || true)"
+    [[ "$deployed" == "$IMAGE_REF" ]] && break
+    log "Waiting for Flux to apply image $IMAGE_REF (attempt $attempt/60)"
+    sleep 10
+  done
+  [[ "$deployed" == "$IMAGE_REF" ]] \
+    || fail "idp-web still runs ${deployed:-nothing}, not $IMAGE_REF. Check: kubectl -n $FLUX_NAMESPACE describe kustomization idp"
   kubectl -n idp-system rollout status deployment/idp-web --timeout=5m
-  deploy_ingress
 }
 
 main() {
   require_tool az
   require_tool kubectl
-  require_tool helm
+  require_tool git
+  require_no_az_upgrade_prompt
+  validate_inputs
+  resolve_gitops_source
 
   ensure_cluster_context
   detect_workload_arch
   ensure_namespaces
   ensure_acr
-  install_crossplane
-  apply_crossplane_runtime_config
-  apply_azure_providers
-  apply_crossplane_credentials
+  resolve_azure_identities
+  ensure_gateway_addons
+  resolve_public_endpoint
+  ensure_redirect_uri
   build_and_push_image
-  deploy_idp
+  create_app_env_secret
+  write_platform_settings
+  ensure_flux_configuration
+  wait_for_platform
 
   log "Deployment complete"
-  log "ACR login server: $ACR_LOGIN_SERVER"
   log "Image: $IMAGE_REF"
-  log "Ingress host: $INGRESS_HOST"
+  log "Flux source: $GITOPS_REPO_URL branch $GITOPS_BRANCH (kubectl -n $FLUX_NAMESPACE get kustomizations,helmreleases)"
   log "Public URL: $NEXTAUTH_EXTERNAL_URL"
   log "Open the application at $NEXTAUTH_EXTERNAL_URL"
 }

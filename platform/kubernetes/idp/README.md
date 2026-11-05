@@ -1,154 +1,105 @@
 # IDP Kubernetes Manifests
 
-This folder contains the Kubernetes manifests that publish the IDP web application inside the `idp-system` namespace.
+This folder contains the Kubernetes manifests that publish the IDP web application inside the `idp-system` namespace. Flux deploys them (see [GitOps](#gitops)); nothing here is applied by hand.
 
 ## Files
 
 - `base.yaml`: namespace, service account, RBAC, and the `idp-web` service.
 - `deployment.yaml`: the `idp-web` deployment that runs the Next.js application.
-- `ingress.yaml`: the public HTTP entry point that routes traffic from the cluster ingress controller to the `idp-web` service.
+- `gateway.yaml`: the public HTTPS entry point: a Gateway API `Gateway` on the AKS application routing implementation, an `HTTPRoute` to the `idp-web` service, and an HTTP-to-HTTPS redirect.
+- `certificate.yaml`: the Let's Encrypt `ClusterIssuer` and the Gateway's `Certificate`.
+
+## GitOps
+
+The deploy script creates an AKS Flux configuration (`idp-platform`, namespace `cluster-config`), which installs the `microsoft.flux` cluster extension on first use. It syncs this repository's branch and applies `platform/gitops/clusters/idp-aks-auto`, which declares five Flux `Kustomization`s:
+
+| Kustomization          | Path                               | Deploys                                                                     | Waits for                     |
+| ---------------------- | ---------------------------------- | --------------------------------------------------------------------------- | ----------------------------- |
+| `crossplane`           | `platform/kubernetes/crossplane`   | Crossplane `HelmRelease` (chart 2.4.3) with the AKS Automatic settings      | Helm release healthy          |
+| `crossplane-providers` | `platform/crossplane/providers`    | Azure provider packages (v2.8.0) and their workload identity runtime config | Providers Installed + Healthy |
+| `crossplane-configs`   | `platform/crossplane/configs`      | `ProviderConfig`, `ClusterProviderConfig`, smoke-test `ResourceGroup`       | Applied only                  |
+| `cert-manager`         | `platform/kubernetes/cert-manager` | cert-manager `HelmRelease` (chart v1.21.3, from its OCI registry)           | Helm release healthy          |
+| `idp`                  | `platform/kubernetes/idp`          | The portal, its Gateway and its Let's Encrypt certificate                   | Rollout and certificate ready |
+
+Versions are pinned in Git; change them with a commit. Values that differ per cluster (Azure IDs, hostname, image) are `${...}` variables that Flux fills from the `idp-platform-settings` ConfigMap, which the deploy script writes. That ConfigMap carries `reconcile.fluxcd.io/watch: Enabled`, so a new image is applied as soon as the script updates it. Secrets never go through Git: the deploy script creates `idp-app-env` from Key Vault before Flux starts the app.
+
+Flux deploys the branch as pushed, not your working copy, so the deploy script stops if the tracked branch has unpushed commits or uncommitted `platform/` changes. `scripts/azure/gitops.test.sh` (run in CI) renders every Kustomization offline and checks the result.
+
+The extension enforces Flux multi-tenancy, so every Flux object lives in `cluster-config` and uses `targetNamespace` to install elsewhere. Check status with `kubectl -n cluster-config get kustomizations,helmreleases` or on the cluster's **GitOps** blade in the Azure portal.
 
 ## How Public Access Works
 
-The IDP is exposed to the internet through an existing AKS web app routing ingress controller.
+The IDP is published over HTTPS through the AKS application routing Gateway API implementation (GatewayClass `approuting-istio`).
 
-The request flow is:
+1. The Gateway's public IP carries an Azure DNS label (`service.beta.kubernetes.io/azure-dns-label-name`, set through `spec.infrastructure.annotations`), so the default hostname `<label>.<region>.cloudapp.azure.com` survives IP changes. The label is derived from the subscription, resource group and cluster name, so reruns keep it.
+2. The HTTPS listener terminates TLS with a browser-trusted Let's Encrypt certificate issued by cert-manager (HTTP-01 through the Gateway's port-80 listener).
+3. The `idp-web` `HTTPRoute` forwards traffic to the `idp-web` service on port `80`, then to the container on port `3000`. Plain HTTP gets a 301 to HTTPS.
 
-1. DNS resolves the selected hostname to the public IP of the ingress controller.
-2. The Azure load balancer in front of the ingress controller accepts the incoming request.
-3. The ingress controller matches the `Host` header against the rule in `ingress.yaml`.
-4. Matching traffic is forwarded to the Kubernetes service `idp-web` on port `80`.
-5. The service forwards the request to the application container on port `3000`.
+## TLS
 
-## How The Hostname Is Constructed
+cert-manager issues and renews a Let's Encrypt certificate for the host (HTTP-01 through the Gateway's port-80 listener). If Let's Encrypt refuses an order, for example because of its shared `azure.com` rate limit, cert-manager keeps retrying and the `idp` Kustomization stays not ready until it succeeds. Set `ACME_SERVER=https://acme-staging-v02.api.letsencrypt.org/directory` to test without production rate limits.
 
-By default, the deployment script does not require a custom domain.
+## Deploy Inputs
 
-If `INGRESS_HOST` is unset, `scripts/azure/deploy-platform-to-aks.sh` reads the public IP of the ingress controller service:
+Everything has a working default; `npm run azure:up` needs no inputs.
 
-- namespace: `app-routing-system`
-- service: `nginx`
+| Variable          | Default                                     | Override when                                                       |
+| ----------------- | ------------------------------------------- | ------------------------------------------------------------------- |
+| `INGRESS_HOST`    | `<DNS_LABEL>.<LOCATION>.cloudapp.azure.com` | You have your own domain (CNAME it to the cloudapp.azure.com name). |
+| `DNS_LABEL`       | `<cluster>-<8 hex>`                         | You want a specific Azure DNS label.                                |
+| `GITOPS_REPO_URL` | the `origin` remote                         | Flux should sync a different (public, https) repository.            |
+| `GITOPS_BRANCH`   | the checked-out branch                      | Flux should track another pushed branch, such as `main`.            |
+| `ACME_SERVER`     | Let's Encrypt production                    | Testing; see TLS above.                                             |
 
-It then derives a hostname in this format:
+`NEXTAUTH_URL` is `https://$INGRESS_HOST` (override with `NEXTAUTH_EXTERNAL_URL`, which must be `https`). The deploy script registers `https://<host>/api/auth/callback/azure-ad` on the portal app registration.
 
-```text
-idp.<public-ip>.sslip.io
-```
+## Identity
 
-Example:
+No client secrets are issued for Azure access. `scripts/azure/bootstrap-aks-control-plane.sh` creates two user-assigned managed identities, each federated with a single Kubernetes service account through AKS workload identity:
 
-```text
-idp.20.14.0.5.sslip.io
-```
+| Identity               | Service account                                                                                         | Azure roles                                                                                                                                     |
+| ---------------------- | ------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `<cluster>-crossplane` | `crossplane-system/provider-azure` (all Azure provider pods, via the default `DeploymentRuntimeConfig`) | `Contributor` on `CROSSPLANE_ROLE_SCOPE` (default: subscription)                                                                                |
+| `<cluster>-idp-web`    | `idp-system/idp-web`                                                                                    | `Storage Blob Data Contributor` on the desired-state account, `Reader` on `CROSSPLANE_ROLE_SCOPE`, `Cost Management Reader` on the subscription |
 
-`sslip.io` is a wildcard DNS service that resolves hostnames containing an IP address back to that IP. That gives the cluster a usable public hostname without first setting up a real DNS zone.
+Crossplane still needs subscription scope by default because it creates resource groups. Narrow `CROSSPLANE_ROLE_SCOPE` once resource groups are pre-provisioned.
 
-## How The Ingress Manifest Is Applied
+## Live Catalog Data
 
-`ingress.yaml` is a template. The deployment script replaces placeholders before applying it:
+The dashboard and catalog read live figures from Azure as the `idp-web` identity and cache them in memory for 10 minutes (1 minute after a failed read). A source that cannot be read is shown as unavailable; nothing is estimated.
 
-- `INGRESS_CLASS_NAME_PLACEHOLDER`
-- `INGRESS_HOST_PLACEHOLDER`
+| Figure                          | Source                                                                    |
+| ------------------------------- | ------------------------------------------------------------------------- |
+| Resources and regions           | Azure Resource Graph, per catalog resource type                           |
+| Cost, month to date             | Azure Cost Management (actual cost; usage can take up to a day to appear) |
+| Compliance and failing controls | Azure Policy states for the `idp-mcsb-v2` assignment, via Resource Graph  |
 
-The rendered ingress looks conceptually like this:
+The bootstrap assigns the built-in **Microsoft cloud security benchmark v2** initiative to the subscription as `idp-mcsb-v2` with enforcement mode `DoNotEnforce`, so it only audits: nothing is blocked or remediated. Azure requires a managed identity on the assignment because some member policies can remediate; it is given no role. A resource counts as compliant only when every evaluated policy is compliant, which matches Azure Policy's own resource summary. The first evaluation takes about 30 minutes after assignment.
 
-```yaml
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: idp-web
-  namespace: idp-system
-spec:
-  ingressClassName: webapprouting.kubernetes.azure.com
-  rules:
-    - host: idp.20.14.0.5.sslip.io
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: idp-web
-                port:
-                  number: 80
-```
+## Desired-State Storage
 
-## Why `NEXTAUTH_URL` Is Updated
+The bootstrap script creates a storage account tagged `idp-role=desired-state` (shared keys disabled, TLS 1.2, blob versioning and 30-day soft delete) and a `desired-state` container. The deploy script writes its blob endpoint into the `idp-app-env` secret. In production the app refuses to start a submission without this store rather than silently writing to the pod filesystem.
 
-The app uses NextAuth, so it needs to know its public base URL.
+## App Secret
 
-During deployment, the script rebuilds the `idp-app-env` secret and forces `NEXTAUTH_URL` to match the public host. If `NEXTAUTH_EXTERNAL_URL` is unset, it defaults to:
+The `idp-app-env` secret is built only from the platform Key Vault (`nextauth-secret`, `portal-client-secret`) and computed values (app ID, tenant, URL, desired-state store). No local env file is read, so development settings such as `IDP_ALLOW_OFFLINE_K8S` cannot reach a cluster. `scripts/azure/scripts.test.sh` (run in CI) checks the exact key set.
 
-```text
-http://<ingress-host>
-```
+## Pod Hardening
 
-That keeps sign-in and callback URL generation aligned with the hostname that users reach from the internet.
+`deployment.yaml` runs as UID 1001 with `runAsNonRoot`, a read-only root filesystem (`emptyDir` mounts for `/app/.next/cache` and `/tmp`), no privilege escalation, all capabilities dropped, and the `RuntimeDefault` seccomp profile. Probes target the unauthenticated `/api/health` route.
 
-## Overriding The Defaults
+## Access Control
 
-You can provide explicit values at deploy time:
+Every API route requires a NextAuth session, and pages redirect signed-out visitors to Entra sign-in. The bootstrap sets **assignment required** on the portal's enterprise application and assigns the operator who ran it; assign further users or groups there.
 
-```bash
-INGRESS_HOST=idp.example.com \
-NEXTAUTH_EXTERNAL_URL=https://idp.example.com \
-bash scripts/azure/deploy-platform-to-aks.sh
-```
+## Ingress Controller Lifecycle
 
-Use this when moving from the temporary `sslip.io` hostname to a real domain.
+Microsoft supports the application routing NGINX ingress only through November 2026. This folder uses the application routing Gateway API implementation instead, so no migration is pending. A new AKS Automatic 1.37 cluster has that implementation enabled but not the managed Gateway API CRDs (observed: `ingressProfile.gatewayApi.installation` was `null`), so the deploy script turns on `--enable-gateway-api` when it is missing.
 
-## Adding HTTPS And TLS
+## AKS Automatic Constraints
 
-The current ingress manifest is HTTP-only, but the path to HTTPS is straightforward.
+These AKS Automatic admission rules shaped the manifests (all observed on 1.37):
 
-To move to TLS:
-
-1. Use a real DNS name such as `idp.example.com` instead of the temporary `sslip.io` hostname.
-2. Point that hostname at the public IP of the ingress controller.
-3. Provision a TLS certificate for that hostname.
-4. Create a Kubernetes TLS secret in `idp-system`.
-5. Add a `tls` section to the ingress and keep the host name aligned with the certificate.
-6. Set `NEXTAUTH_EXTERNAL_URL` to the final `https://` URL before deployment.
-
-Conceptually, the ingress would become:
-
-```yaml
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: idp-web
-  namespace: idp-system
-spec:
-  ingressClassName: webapprouting.kubernetes.azure.com
-  tls:
-    - hosts:
-        - idp.example.com
-      secretName: idp-web-tls
-  rules:
-    - host: idp.example.com
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: idp-web
-                port:
-                  number: 80
-```
-
-With that in place, the corresponding deploy command should use the HTTPS public URL:
-
-```bash
-INGRESS_HOST=idp.example.com \
-NEXTAUTH_EXTERNAL_URL=https://idp.example.com \
-bash scripts/azure/deploy-platform-to-aks.sh
-```
-
-The important rule is consistency: the certificate host, the ingress host, DNS, and `NEXTAUTH_EXTERNAL_URL` all need to match.
-
-## Important Notes
-
-- The current manifest in this repository still publishes HTTP only. The TLS section above describes the next step for production hardening.
-- The cluster must already have an ingress controller for the configured ingress class.
-- For Entra ID sign-in to work publicly, the app registration must include the public callback URL for the chosen hostname.
+- `aks-managed-block-webhook-configs-targeting-protected-resources` rejects webhooks matching `*` resources, so Crossplane runs with `--enable-usages=false` (see its `HelmRelease`).
+- `aks-managed-protect-system-namespaces` denies writes to `kube-system`, so cert-manager's leader election runs in `cert-manager`.
+- The admissions enforcer adds system-namespace exclusions to webhook `namespaceSelector`s and owns that field. Flux's helm-controller applies server-side and forces conflicts, so cert-manager upgrades are not blocked.

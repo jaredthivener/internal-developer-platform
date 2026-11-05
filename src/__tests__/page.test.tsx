@@ -1,22 +1,27 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
+import { unavailablePortfolio } from '@/test/portfolioFixture';
 import Home from '@/app/page';
+
+vi.mock('@/lib/catalog/livePortfolio', () => ({
+  getLivePortfolio: vi.fn(async () => unavailablePortfolio),
+}));
 
 vi.mock('@/components/features/catalog/CloudEstateOverview', () => ({
   default: () => <div>Cloud Estate Overview</div>,
 }));
 
 describe('Home Page', () => {
-  it('renders the estate title', () => {
-    render(<Home />);
+  it('renders the estate title', async () => {
+    render(await Home());
 
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(
       'Cloud Estate'
     );
   });
 
-  it('renders the estate summary message', () => {
-    render(<Home />);
+  it('renders the estate summary message', async () => {
+    render(await Home());
     expect(
       screen.getByText(
         /explore the platform-owned azure estate through a clean catalog view/i
@@ -24,8 +29,8 @@ describe('Home Page', () => {
     ).toBeInTheDocument();
   });
 
-  it('links from the home page to the catalog route', () => {
-    render(<Home />);
+  it('links from the home page to the catalog route', async () => {
+    render(await Home());
 
     expect(screen.getByRole('link', { name: /open catalog/i })).toHaveAttribute(
       'href',

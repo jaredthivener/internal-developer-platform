@@ -11,7 +11,13 @@ const config: Config = {
 
   // Future flags, see https://docusaurus.io/docs/api/docusaurus-config#future
   future: {
-    v4: true, // Improve compatibility with the upcoming Docusaurus v4
+    // The v4 flags `v4: true` enabled up to 3.9. From 3.10 the shortcut also
+    // turns on fasterByDefault (needs @docusaurus/faster) and
+    // mdx1CompatDisabledByDefault; adopt those deliberately, not via a bump.
+    v4: {
+      removeLegacyPostBuildHeadAttribute: true,
+      useCssCascadeLayers: true,
+    },
   },
 
   // Set the production url of your site here

@@ -1,11 +1,12 @@
+# Authenticates through AKS workload identity; no client secret exists.
+# The ${...} values are substituted by Flux from the idp-platform-settings ConfigMap.
 apiVersion: azure.m.upbound.io/v1beta1
 kind: ClusterProviderConfig
 metadata:
   name: default
 spec:
   credentials:
-    source: Secret
-    secretRef:
-      namespace: crossplane-system
-      name: azure-provider-creds
-      key: creds
+    source: OIDCTokenFile
+  clientID: ${CROSSPLANE_CLIENT_ID}
+  tenantID: ${AZURE_TENANT_ID}
+  subscriptionID: ${AZURE_SUBSCRIPTION_ID}

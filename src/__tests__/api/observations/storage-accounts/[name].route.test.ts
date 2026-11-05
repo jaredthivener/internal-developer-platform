@@ -1,7 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
+import { getServerSession } from 'next-auth';
 import { GET } from '@/app/api/observations/storage-accounts/[name]/route';
 import { getStorageAccountObservationByName } from '@/lib/observations/storageAccounts';
+
+vi.mock('next-auth', () => ({
+  getServerSession: vi.fn(),
+}));
+
+vi.mock('@/lib/auth/authOptions', () => ({
+  authOptions: {},
+}));
 
 vi.mock('@/lib/observations/storageAccounts', () => ({
   getStorageAccountObservationByName: vi.fn(),
@@ -10,6 +19,9 @@ vi.mock('@/lib/observations/storageAccounts', () => ({
 describe('GET /api/observations/storage-accounts/[name]', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(getServerSession).mockResolvedValue({
+      user: { name: 'Test User' },
+    });
   });
 
   it('returns a detailed observation document', async () => {
@@ -101,5 +113,19 @@ describe('GET /api/observations/storage-accounts/[name]', () => {
     });
 
     expect(res.status).toBe(404);
+  });
+
+  it('returns 401 without a session and never runs the observation', async () => {
+    vi.mocked(getServerSession).mockResolvedValueOnce(null);
+
+    const res = await GET(
+      new NextRequest(
+        'http://localhost:3000/api/observations/storage-accounts/x'
+      ),
+      { params: Promise.resolve({ name: 'x' }) }
+    );
+
+    expect(res.status).toBe(401);
+    expect(getStorageAccountObservationByName).not.toHaveBeenCalled();
   });
 });

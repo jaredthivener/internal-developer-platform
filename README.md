@@ -27,7 +27,15 @@ A highly opinionated, secure, and developer-friendly IDP built with Next.js, Rea
 
 ## Azure Bootstrap
 
-Use the AKS bootstrap script to stand up a low-cost Azure control-plane environment for the IDP and Crossplane:
+Stand up the whole environment (cluster, identities, secrets, Crossplane, portal, TLS) with one command:
+
+```bash
+az login
+az config set auto-upgrade.enable=no   # the scripts stop if az could prompt mid-run
+npm run azure:up
+```
+
+`azure:up` runs the two scripts below in order; both are idempotent, so rerunning resumes or reconciles. No local secrets file is used: Entra and NextAuth secrets are generated straight into Key Vault.
 
 ```bash
 bash scripts/azure/bootstrap-aks-control-plane.sh
@@ -36,67 +44,71 @@ bash scripts/azure/bootstrap-aks-control-plane.sh
 What the script does:
 
 - Creates a resource group in a supported AKS Automatic region.
-- Creates a service principal intended for Crossplane or platform automation credentials.
-- Assigns scoped RBAC roles for resource provisioning and AKS access.
-- Creates an AKS Automatic cluster pinned to Kubernetes `1.34` with hosted system pools, OIDC issuer, and workload identity enabled.
+- Creates an AKS Automatic cluster on the newest GA Kubernetes version AKS offers in the region (override with `KUBERNETES_VERSION`), with hosted system pools, OIDC issuer, and workload identity enabled.
 - Adds a low-cost Arm64 Spot user node pool for non-critical workloads.
-- Writes a Crossplane-ready service principal credentials file to `.azure/<cluster-name>-crossplane.json` by default.
+- Creates two user-assigned managed identities federated through workload identity (no client secrets): one for the Crossplane Azure providers and one for the IDP web app.
+- Creates the desired-state storage account (shared keys disabled, versioning and soft delete on) and grants the IDP identity `Storage Blob Data Contributor` on it.
+- Creates the platform Key Vault (tag `idp-role=platform-secrets`) and the Entra app registration `<cluster>-portal`. The client secret and `NEXTAUTH_SECRET` are written directly to Key Vault and never printed.
+- Turns on **assignment required** for the portal's enterprise application and assigns the signed-in operator; assign more users or groups in Entra to grant access.
+- Assigns the built-in **Microsoft cloud security benchmark v2** initiative to the subscription in audit-only mode (`DoNotEnforce`) and grants the IDP identity `Cost Management Reader`, so the dashboard and catalog show live compliance and month-to-date cost. See [platform/kubernetes/idp/README.md](platform/kubernetes/idp/README.md#live-catalog-data).
 
 Important:
 
-- The bootstrap defaults to Kubernetes `1.34` because `@kubernetes/client-node` in this platform supports the Kubernetes `1.34` minor line. If an existing cluster is already on a different minor version, the bootstrap script will now fail fast instead of silently proceeding.
-- AKS itself uses managed identity. The generated service principal is for Crossplane or other platform automation, not the cluster identity.
+- Reruns keep an existing cluster's version. The portal only uses the version-independent `CustomObjectsApi` of `@kubernetes/client-node`, so it does not constrain the cluster version. AKS upgrades one minor version at a time; the bootstrap does not upgrade for you.
+- If the cluster is recreated, the bootstrap repoints the federated credentials at the new cluster's OIDC issuer.
+- Crossplane's identity gets `Contributor` on `CROSSPLANE_ROLE_SCOPE` (default: the subscription, because it creates resource groups). Narrow it once resource groups are pre-provisioned.
 - Managed system capacity remains on the hosted automatic/system side. The Arm64 Spot pool is for cheaper workload scheduling and should not be the only capacity for critical recovery paths.
 - AKS Automatic hosted system node pools are currently preview and region-limited. The script validates the Azure CLI prereqs and preview feature registration before cluster creation.
 
 ## AKS Deployment
 
-After the cluster exists, deploy Crossplane and the IDP app with:
+After the cluster exists, deploy with:
 
 ```bash
 bash scripts/azure/deploy-platform-to-aks.sh
 ```
 
+Everything inside the cluster is deployed by **Flux** (the AKS GitOps extension, `microsoft.flux`) from this repository: Crossplane and cert-manager as `HelmRelease`s, the Crossplane providers and configs, and the portal. Flux syncs the branch you have checked out, as pushed to `origin`, so commit and push before deploying; the script stops if your branch has unpushed commits or uncommitted `platform/` changes. Set `GITOPS_BRANCH=main` to track another pushed branch.
+
+The portal is always published on HTTPS (Entra ID only accepts `https` redirect URIs). With no inputs it gives the Gateway's public IP an Azure DNS label (`<label>.<region>.cloudapp.azure.com`) and cert-manager issues a trusted Let's Encrypt certificate for it. For your own domain, set `INGRESS_HOST` and point its DNS at the Gateway.
+
 What the deploy script does:
 
 - Reuses an existing ACR from the target resource group when one already exists, otherwise creates a new Basic ACR and attaches it to the AKS cluster.
 - Builds the Next.js app as a standalone container image and pushes it to ACR.
-- Installs Crossplane with Helm into `crossplane-system`.
-- Installs the Azure provider family packages needed for resource groups, networking, storage, PostgreSQL, and AKS.
-- Creates the Azure provider secret from the bootstrap-generated service principal JSON file.
-- Applies a cluster-scoped Crossplane `ClusterProviderConfig` and a smoke-test `ResourceGroup` example.
-- Creates the `idp-system` namespace resources and deploys the app.
-- Creates or updates a public `Ingress` using the AKS web app routing ingress class and derives a default public hostname from the ingress load balancer IP when one is not provided.
+- Enables the managed Gateway API and the application routing Gateway implementation (`approuting-istio`) if missing.
+- Registers `https://<host>/api/auth/callback/azure-ad` on the portal app registration.
+- Creates the app's secret from Key Vault and writes the per-cluster values Flux substitutes (Azure IDs, hostname, image) to the `idp-platform-settings` ConfigMap.
+- Creates (or repoints) the Flux configuration `idp-platform`, then waits until every Flux `Kustomization` is ready and the new image is rolled out.
+
+What Flux deploys (versions pinned in Git; see [platform/kubernetes/idp/README.md](platform/kubernetes/idp/README.md#gitops)):
+
+- Crossplane 2.4.3 into `crossplane-system`, the Azure provider packages v2.8.0 (resource groups, networking, storage, PostgreSQL, AKS), workload identity `ProviderConfig`/`ClusterProviderConfig` objects and a smoke-test `ResourceGroup`.
+- cert-manager v1.21.3, a Let's Encrypt `ClusterIssuer` and the Gateway's certificate.
+- The portal in `idp-system` and its TLS `Gateway` with an HTTP-to-HTTPS redirect.
 
 Important deploy behavior:
 
 - If `ACR_NAME` is unset and the resource group already contains exactly one Azure Container Registry, the script reuses that registry for subsequent runs.
 - If `ACR_NAME` is unset and the resource group contains no registries, the script creates a new one.
 - If `ACR_NAME` is unset and the resource group contains multiple registries, the script fails fast and requires an explicit `ACR_NAME`.
-- If `INGRESS_HOST` is unset, the deploy script derives `idp.<ingress-public-ip>.sslip.io` from the existing AKS web app routing load balancer service.
-- If `NEXTAUTH_EXTERNAL_URL` is unset, the deploy script sets `NEXTAUTH_URL` in the cluster secret to `http://<ingress-host>` for the public deployment.
+- `NEXTAUTH_URL` in the cluster secret is set to `https://<INGRESS_HOST>` unless `NEXTAUTH_EXTERNAL_URL` (also `https`) is given.
+- The app's Kubernetes secret is built only from Key Vault and computed values, so local settings such as `IDP_ALLOW_OFFLINE_K8S` can never reach a cluster.
 
-For a manifest-level explanation of how the service, deployment, and ingress work together, see [platform/kubernetes/idp/README.md](./platform/kubernetes/idp/README.md).
+For a manifest-level explanation of how the service, deployment, and Gateway work together, see [platform/kubernetes/idp/README.md](./platform/kubernetes/idp/README.md).
 
 Starter assumptions:
 
-- The script expects a real app env file at `.env.local` by default.
-- For an initial cluster-local setup, keep `NEXTAUTH_URL=http://localhost:3000` and access the app with `kubectl -n idp-system port-forward svc/idp-web 3000:80`.
-- The shipped starter RBAC for the app is read-only against Crossplane and Azure managed resources. If you re-enable write flows in the UI, expand the service account permissions deliberately instead of broadening them blindly.
+- The app's Kubernetes RBAC is read-only except for create, delete, and patch on `storage.azure.upbound.io` `accounts`. The API additionally rejects any resource type outside its allowlist (`src/lib/crossplane/allowedResources.ts`).
+- Every API route requires a signed-in session, and only users assigned to the portal's enterprise application can sign in.
 
 ## Storage Account Dev Workflow
 
 After the AKS platform deploy completes:
 
-1. Port-forward the app:
-
-```bash
-kubectl -n idp-system port-forward svc/idp-web 3000:80
-```
-
-2. Open the portal at `http://localhost:3000`.
-3. Use the `Azure Storage Account Workflow` form in the Azure resource catalog.
-4. Submit a dev-safe request targeting the default smoke-test resource group `idp-crossplane-smoke`, or another existing resource group that Crossplane can write to.
+1. Open the portal at `https://<INGRESS_HOST>` and sign in with Entra ID.
+2. Use the `Azure Storage Account Workflow` form in the Azure resource catalog.
+3. Submit a dev-safe request targeting the default smoke-test resource group `idp-crossplane-smoke`, or another existing resource group that Crossplane can write to.
 
 The workflow creates this managed resource type on the cluster:
 

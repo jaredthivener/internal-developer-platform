@@ -1,10 +1,12 @@
+# Proves Crossplane can reach Azure with its workload identity.
 apiVersion: azure.m.upbound.io/v1beta1
 kind: ResourceGroup
 metadata:
   name: idp-crossplane-smoke
+  namespace: default
 spec:
   forProvider:
-    location: LOCATION_PLACEHOLDER
+    location: ${LOCATION}
   providerConfigRef:
     kind: ClusterProviderConfig
     name: default

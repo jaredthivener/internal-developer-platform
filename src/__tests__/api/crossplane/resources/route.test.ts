@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import * as k8s from '@kubernetes/client-node';
 import { NextRequest } from 'next/server';
 import { DELETE, GET, PATCH, POST } from '@/app/api/crossplane/resources/route';
 import { getServerSession } from 'next-auth';
@@ -21,9 +22,36 @@ vi.mock('@/lib/auth/authOptions', () => ({
   authOptions: {},
 }));
 
+// Same shape @kubernetes/client-node 1.x throws for a non-2xx API response:
+// numeric `code` plus the raw Status JSON string as `body`.
+function kubernetesStatusError(code: number, message: string) {
+  return new k8s.ApiException(
+    code,
+    `HTTP-Code: ${code}`,
+    JSON.stringify({ kind: 'Status', status: 'Failure', message, code }),
+    {}
+  );
+}
+
+function jsonRequest(method: string, body: unknown) {
+  return new NextRequest('http://localhost:3000/api/crossplane/resources', {
+    method,
+    body: JSON.stringify(body),
+  });
+}
+
+const storageAccount = {
+  group: 'storage.azure.upbound.io',
+  version: 'v1beta1',
+  plural: 'accounts',
+};
+
 describe('GET /api/crossplane/resources', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(getServerSession).mockResolvedValue({
+      user: { name: 'Test User' },
+    });
     vi.mocked(getDesiredStateStore).mockReturnValue({
       persistSubmission: vi.fn().mockResolvedValue(undefined),
       markSubmissionApplied: vi.fn().mockResolvedValue(undefined),
@@ -31,11 +59,11 @@ describe('GET /api/crossplane/resources', () => {
     });
   });
 
-  it.skip('should return 401 Unauthorized if user is not authenticated', async () => {
+  it('should return 401 Unauthorized if user is not authenticated', async () => {
     vi.mocked(getServerSession).mockResolvedValueOnce(null);
 
     const req = new NextRequest(
-      'http://localhost:3000/api/crossplane/resources?group=s3.aws.m.upbound.io&version=v1beta1&plural=buckets'
+      'http://localhost:3000/api/crossplane/resources?group=storage.azure.upbound.io&version=v1beta1&plural=accounts'
     );
     const res = await GET(req);
 
@@ -49,7 +77,7 @@ describe('GET /api/crossplane/resources', () => {
 
     // Missing 'plural' parameter
     const req = new NextRequest(
-      'http://localhost:3000/api/crossplane/resources?group=s3.aws.m.upbound.io&version=v1beta1'
+      'http://localhost:3000/api/crossplane/resources?group=storage.azure.upbound.io&version=v1beta1'
     );
     const res = await GET(req);
 
@@ -82,7 +110,7 @@ describe('GET /api/crossplane/resources', () => {
     } /* eslint-disable-line @typescript-eslint/no-explicit-any */ as any);
 
     const req = new NextRequest(
-      'http://localhost:3000/api/crossplane/resources?group=s3.aws.m.upbound.io&version=v1beta1&plural=buckets'
+      'http://localhost:3000/api/crossplane/resources?group=storage.azure.upbound.io&version=v1beta1&plural=accounts'
     );
     const res = await GET(req);
 
@@ -90,9 +118,9 @@ describe('GET /api/crossplane/resources', () => {
     const body = await res.json();
 
     expect(mockListClusterCustomObject).toHaveBeenCalledWith({
-      group: 's3.aws.m.upbound.io',
+      group: 'storage.azure.upbound.io',
       version: 'v1beta1',
-      plural: 'buckets',
+      plural: 'accounts',
     });
 
     expect(body.data).toHaveLength(1);
@@ -118,7 +146,7 @@ describe('GET /api/crossplane/resources', () => {
     } /* eslint-disable-line @typescript-eslint/no-explicit-any */ as any);
 
     const req = new NextRequest(
-      'http://localhost:3000/api/crossplane/resources?group=s3.aws.m.upbound.io&version=v1beta1&plural=buckets'
+      'http://localhost:3000/api/crossplane/resources?group=storage.azure.upbound.io&version=v1beta1&plural=accounts'
     );
     const res = await GET(req);
 
@@ -216,6 +244,9 @@ describe('GET /api/crossplane/resources', () => {
 describe('DELETE /api/crossplane/resources', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(getServerSession).mockResolvedValue({
+      user: { name: 'Test User' },
+    });
   });
 
   it('should return 400 Bad Request if missing required delete parameters', async () => {
@@ -297,13 +328,14 @@ describe('DELETE /api/crossplane/resources', () => {
   });
 
   it('should return the upstream status and message when delete is forbidden', async () => {
-    const mockDeleteClusterCustomObject = vi.fn().mockRejectedValueOnce({
-      body: {
-        code: 403,
-        message:
-          'accounts.storage.azure.upbound.io "devstorealpha01" is forbidden',
-      },
-    });
+    const mockDeleteClusterCustomObject = vi
+      .fn()
+      .mockRejectedValueOnce(
+        kubernetesStatusError(
+          403,
+          'accounts.storage.azure.upbound.io "devstorealpha01" is forbidden'
+        )
+      );
 
     vi.mocked(getCustomObjectsApi).mockReturnValueOnce({
       deleteClusterCustomObject: mockDeleteClusterCustomObject,
@@ -361,6 +393,9 @@ describe('DELETE /api/crossplane/resources', () => {
 describe('PATCH /api/crossplane/resources', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(getServerSession).mockResolvedValue({
+      user: { name: 'Test User' },
+    });
   });
 
   it('should return 400 Bad Request if missing required patch parameters', async () => {
@@ -418,21 +453,16 @@ describe('PATCH /api/crossplane/resources', () => {
     const res = await PATCH(req);
 
     expect(res.status).toBe(200);
+    // The merge-patch Content-Type is asserted on the wire in wire.test.ts.
     expect(mockPatchClusterCustomObject).toHaveBeenCalledWith(
-      'storage.azure.upbound.io',
-      'v1beta1',
-      'accounts',
-      'devstorealpha01',
-      patch,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      expect.objectContaining({
-        headers: expect.objectContaining({
-          'Content-Type': 'application/merge-patch+json',
-        }),
-      })
+      {
+        group: 'storage.azure.upbound.io',
+        version: 'v1beta1',
+        plural: 'accounts',
+        name: 'devstorealpha01',
+        body: patch,
+      },
+      expect.anything()
     );
     const body = await res.json();
     expect(body.data).toEqual({ metadata: { name: 'devstorealpha01' } });
@@ -477,6 +507,9 @@ describe('PATCH /api/crossplane/resources', () => {
 describe('POST /api/crossplane/resources', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(getServerSession).mockResolvedValue({
+      user: { name: 'Test User' },
+    });
     vi.mocked(getDesiredStateStore).mockReturnValue({
       persistSubmission: vi.fn().mockResolvedValue(undefined),
       markSubmissionApplied: vi.fn().mockResolvedValue(undefined),
@@ -606,9 +639,11 @@ describe('POST /api/crossplane/resources', () => {
   });
 
   it('should mark the submission as failed when the Kubernetes create call errors', async () => {
-    const mockCreateClusterCustomObject = vi.fn().mockRejectedValueOnce({
-      body: { code: 500, message: 'cluster create failed' },
-    });
+    const mockCreateClusterCustomObject = vi
+      .fn()
+      .mockRejectedValueOnce(
+        kubernetesStatusError(500, 'cluster create failed')
+      );
 
     vi.mocked(getCustomObjectsApi).mockReturnValueOnce({
       createClusterCustomObject: mockCreateClusterCustomObject,
@@ -634,6 +669,7 @@ describe('POST /api/crossplane/resources', () => {
     const res = await POST(req);
 
     expect(res.status).toBe(500);
+    expect((await res.json()).error).toBe('Internal Server Error');
     const desiredStateStore =
       vi.mocked(getDesiredStateStore).mock.results[0]?.value;
     expect(desiredStateStore.persistSubmission).toHaveBeenCalledTimes(1);
@@ -674,5 +710,157 @@ describe('POST /api/crossplane/resources', () => {
     } else {
       process.env.IDP_ALLOW_OFFLINE_K8S = originalFlag;
     }
+  });
+});
+
+describe('authentication and resource allowlist', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(getServerSession).mockResolvedValue({
+      user: { name: 'Test User' },
+    });
+  });
+
+  it.each([
+    [
+      'POST',
+      () => POST(jsonRequest('POST', { ...storageAccount, payload: {} })),
+    ],
+    [
+      'DELETE',
+      () => DELETE(jsonRequest('DELETE', { ...storageAccount, name: 'x' })),
+    ],
+    [
+      'PATCH',
+      () =>
+        PATCH(
+          jsonRequest('PATCH', { ...storageAccount, name: 'x', patch: {} })
+        ),
+    ],
+  ])(
+    'returns 401 for %s without a session and never calls Kubernetes',
+    async (_, call) => {
+      vi.mocked(getServerSession).mockResolvedValueOnce(null);
+
+      const res = await call();
+
+      expect(res.status).toBe(401);
+      expect(getCustomObjectsApi).not.toHaveBeenCalled();
+      expect(getDesiredStateStore).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each([
+    [
+      'GET of an unlisted resource type',
+      () =>
+        GET(
+          new NextRequest(
+            'http://localhost:3000/api/crossplane/resources?group=rbac.authorization.k8s.io&version=v1&plural=clusterrolebindings'
+          )
+        ),
+    ],
+    [
+      'GET by name of a list-only resource type',
+      () =>
+        GET(
+          new NextRequest(
+            'http://localhost:3000/api/crossplane/resources?group=azure.m.upbound.io&version=v1beta1&plural=resourcegroups&name=rg1'
+          )
+        ),
+    ],
+    [
+      'POST of an unlisted resource type',
+      () =>
+        POST(
+          jsonRequest('POST', {
+            group: 'rbac.authorization.k8s.io',
+            version: 'v1',
+            plural: 'clusterrolebindings',
+            payload: { metadata: { name: 'pwn' } },
+          })
+        ),
+    ],
+    [
+      'DELETE of a list-only resource type',
+      () =>
+        DELETE(
+          jsonRequest('DELETE', {
+            group: 'azure.m.upbound.io',
+            version: 'v1beta1',
+            plural: 'resourcegroups',
+            name: 'rg1',
+          })
+        ),
+    ],
+    [
+      'PATCH of an unlisted resource type',
+      () =>
+        PATCH(
+          jsonRequest('PATCH', {
+            group: 'pkg.crossplane.io',
+            version: 'v1',
+            plural: 'providers',
+            name: 'provider-azure-storage',
+            patch: { spec: {} },
+          })
+        ),
+    ],
+  ])('returns 403 for %s and never calls Kubernetes', async (_, call) => {
+    const res = await call();
+
+    expect(res.status).toBe(403);
+    expect(getCustomObjectsApi).not.toHaveBeenCalled();
+    expect(getDesiredStateStore).not.toHaveBeenCalled();
+  });
+
+  it('allows listing the approved resource groups', async () => {
+    const mockList = vi.fn().mockResolvedValueOnce({ items: [] });
+    vi.mocked(getCustomObjectsApi).mockReturnValueOnce({
+      listClusterCustomObject: mockList,
+    } /* eslint-disable-line @typescript-eslint/no-explicit-any */ as any);
+
+    const res = await GET(
+      new NextRequest(
+        'http://localhost:3000/api/crossplane/resources?group=azure.m.upbound.io&version=v1beta1&plural=resourcegroups'
+      )
+    );
+
+    expect(res.status).toBe(200);
+    expect(mockList).toHaveBeenCalledWith({
+      group: 'azure.m.upbound.io',
+      version: 'v1beta1',
+      plural: 'resourcegroups',
+    });
+  });
+
+  it('passes a 4xx Kubernetes status message through to the caller', async () => {
+    vi.mocked(getDesiredStateStore).mockReturnValue({
+      persistSubmission: vi.fn().mockResolvedValue(undefined),
+      markSubmissionApplied: vi.fn().mockResolvedValue(undefined),
+      markSubmissionFailed: vi.fn().mockResolvedValue(undefined),
+    });
+    vi.mocked(getCustomObjectsApi).mockReturnValueOnce({
+      createClusterCustomObject: vi
+        .fn()
+        .mockRejectedValueOnce(
+          kubernetesStatusError(
+            409,
+            'accounts.storage.azure.upbound.io "taken01" already exists'
+          )
+        ),
+    } /* eslint-disable-line @typescript-eslint/no-explicit-any */ as any);
+
+    const res = await POST(
+      jsonRequest('POST', {
+        ...storageAccount,
+        payload: { metadata: { name: 'taken01' } },
+      })
+    );
+
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toBe(
+      'accounts.storage.azure.upbound.io "taken01" already exists'
+    );
   });
 });

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireSession } from '@/lib/auth/requireSession';
 import { getStorageAccountObservationByName } from '@/lib/observations/storageAccounts';
 
 type RouteContext = {
@@ -8,6 +9,11 @@ type RouteContext = {
 };
 
 export async function GET(req: NextRequest, context: RouteContext) {
+  const unauthorized = await requireSession();
+  if (unauthorized) {
+    return unauthorized;
+  }
+
   try {
     const { name } = await context.params;
     const refresh = req.nextUrl.searchParams.get('refresh') === 'true';
@@ -24,13 +30,15 @@ export async function GET(req: NextRequest, context: RouteContext) {
 
     return NextResponse.json(response, { status: 200 });
   } catch (error) {
+    // Kubernetes/ARM error text can include response headers and identities;
+    // keep it in the server log only.
+    console.error(
+      '[API] GET /api/observations/storage-accounts/[name] - Error:',
+      error
+    );
+
     return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : 'Failed to observe storage account',
-      },
+      { error: 'Failed to observe storage account' },
       { status: 500 }
     );
   }

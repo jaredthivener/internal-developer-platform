@@ -1,0 +1,119 @@
+# Entry point of the AKS Flux configuration (microsoft.flux extension). The
+# deploy script creates the Flux configuration "idp-platform" in namespace
+# cluster-config with one root Kustomization on this directory; that root
+# applies these Kustomizations, which deploy the rest of platform/.
+#
+# The extension enforces multi-tenancy: every Flux object lives in
+# cluster-config (where the flux-applier service account is) and only uses
+# sources from that namespace.
+#
+# ${...} values come from the ConfigMap idp-platform-settings, which the deploy
+# script writes (Azure IDs, hostname, image).
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: crossplane
+  namespace: cluster-config
+spec:
+  interval: 30m
+  retryInterval: 2m
+  timeout: 10m
+  path: ./platform/kubernetes/crossplane
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: idp-platform
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: crossplane-providers
+  namespace: cluster-config
+spec:
+  dependsOn:
+    - name: crossplane
+  interval: 30m
+  retryInterval: 2m
+  timeout: 15m
+  path: ./platform/crossplane/providers
+  prune: true
+  wait: true
+  # Providers report Installed and Healthy, not Ready. exists() rather than
+  # all(): all() is true on an empty list, before any condition is set.
+  healthCheckExprs:
+    - apiVersion: pkg.crossplane.io/v1
+      kind: Provider
+      current: >-
+        status.conditions.exists(e, e.type == 'Installed' && e.status == 'True') &&
+        status.conditions.exists(e, e.type == 'Healthy' && e.status == 'True')
+  sourceRef:
+    kind: GitRepository
+    name: idp-platform
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: idp-platform-settings
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: crossplane-configs
+  namespace: cluster-config
+spec:
+  dependsOn:
+    - name: crossplane-providers
+  interval: 30m
+  retryInterval: 2m
+  timeout: 5m
+  path: ./platform/crossplane/configs
+  prune: true
+  # Not waited on: the smoke-test ResourceGroup becomes Ready in Azure on its
+  # own schedule and should not hold up the portal.
+  wait: false
+  sourceRef:
+    kind: GitRepository
+    name: idp-platform
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: idp-platform-settings
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: cert-manager
+  namespace: cluster-config
+spec:
+  interval: 30m
+  retryInterval: 2m
+  timeout: 10m
+  path: ./platform/kubernetes/cert-manager
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: idp-platform
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: idp
+  namespace: cluster-config
+spec:
+  dependsOn:
+    - name: cert-manager
+  interval: 30m
+  retryInterval: 2m
+  # Includes the first Let's Encrypt issuance.
+  timeout: 15m
+  path: ./platform/kubernetes/idp
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: idp-platform
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: idp-platform-settings

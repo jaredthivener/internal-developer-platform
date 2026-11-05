@@ -1,5 +1,10 @@
 import * as k8s from '@kubernetes/client-node';
 import { NextRequest, NextResponse } from 'next/server';
+import { requireSession } from '@/lib/auth/requireSession';
+import {
+  isAllowedResource,
+  type ResourceVerb,
+} from '@/lib/crossplane/allowedResources';
 import { getCustomObjectsApi } from '@/lib/crossplane/client';
 import { shouldUseCrossplaneMockMode } from '@/lib/crossplane/offlineMode';
 import { getDesiredStateStore } from '@/lib/persistence/store';
@@ -21,33 +26,47 @@ function unwrapKubernetesResponse<T>(response: T | { body?: T }): T {
   return response as T;
 }
 
-function toErrorResponse(error: unknown, fallbackMessage: string) {
-  const errorBody =
-    typeof error === 'object' && error !== null && 'body' in error
-      ? (error as { body?: { code?: number; message?: string } }).body
-      : undefined;
+// @kubernetes/client-node 1.x throws ApiException with the HTTP status in
+// `code` and the API server's Status object as a raw JSON string in `body`.
+function describeError(error: unknown): { status: number; message?: string } {
+  if (error instanceof k8s.ApiException) {
+    let message: string | undefined;
+    try {
+      message = (JSON.parse(String(error.body)) as { message?: string })
+        .message;
+    } catch {
+      message = undefined;
+    }
+    const status = error.code >= 400 && error.code <= 599 ? error.code : 500;
+    return { status, message };
+  }
 
+  return {
+    status: 500,
+    message: error instanceof Error ? error.message : undefined,
+  };
+}
+
+function toErrorResponse(error: unknown, fallbackMessage: string) {
+  const { status, message } = describeError(error);
+
+  // 4xx Status messages (AlreadyExists, Invalid, Forbidden) are actionable for
+  // the user; anything else stays in the server log.
   return NextResponse.json(
-    { error: errorBody?.message || fallbackMessage },
-    { status: errorBody?.code || 500 }
+    { error: status < 500 && message ? message : fallbackMessage },
+    { status }
   );
 }
 
 function getErrorMessage(error: unknown, fallbackMessage: string): string {
-  if (
-    typeof error === 'object' &&
-    error !== null &&
-    'body' in error &&
-    typeof (error as { body?: { message?: string } }).body?.message === 'string'
-  ) {
-    return (error as { body?: { message?: string } }).body?.message as string;
-  }
+  return describeError(error).message || fallbackMessage;
+}
 
-  if (error instanceof Error) {
-    return error.message;
-  }
-
-  return fallbackMessage;
+function forbiddenResourceResponse(verb: ResourceVerb) {
+  return NextResponse.json(
+    { error: `This resource type does not support '${verb}' through the IDP` },
+    { status: 403 }
+  );
 }
 
 function withRequestIdAnnotation(
@@ -164,14 +183,12 @@ function getOfflineMockCollection(
  * Requires `group`, `version`, and `plural` searchParams.
  */
 export async function GET(req: NextRequest) {
-  try {
-    // 1. Enforce strict auth proxy layer (Bypassed for Dev/MVP Core functionality phase)
-    // const session = await getServerSession(authOptions);
-    // if (!session) {
-    //   return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    // }
+  const unauthorized = await requireSession();
+  if (unauthorized) {
+    return unauthorized;
+  }
 
-    // 2. Extract and validate parameters
+  try {
     const searchParams = req.nextUrl.searchParams;
     const group = searchParams.get('group');
     const version = searchParams.get('version');
@@ -183,6 +200,11 @@ export async function GET(req: NextRequest) {
         { error: 'Missing required query parameters: group, version, plural' },
         { status: 400 }
       );
+    }
+
+    const verb: ResourceVerb = name ? 'get' : 'list';
+    if (!isAllowedResource(group, version, plural, verb)) {
+      return forbiddenResourceResponse(verb);
     }
 
     if (shouldUseCrossplaneMockMode()) {
@@ -248,19 +270,17 @@ export async function GET(req: NextRequest) {
  * Expects a JSON body with `group`, `version`, `plural`, and the full `payload`.
  */
 export async function POST(req: NextRequest) {
+  const unauthorized = await requireSession();
+  if (unauthorized) {
+    return unauthorized;
+  }
+
   let requestId: string | null = null;
 
   try {
-    // 1. Authentication Check (Bypassed for Dev/MVP Core functionality phase)
-    // const session = await getServerSession(authOptions);
-    // if (!session) {
-    //   return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    // }
-
     const body = await req.json();
     const { group, version, plural, payload } = body;
 
-    // Validate request structure
     if (!group || !version || !plural || !payload) {
       return NextResponse.json(
         {
@@ -269,6 +289,10 @@ export async function POST(req: NextRequest) {
         },
         { status: 400 }
       );
+    }
+
+    if (!isAllowedResource(group, version, plural, 'create')) {
+      return forbiddenResourceResponse('create');
     }
 
     requestId = crypto.randomUUID();
@@ -365,6 +389,11 @@ export async function POST(req: NextRequest) {
  * Expects a JSON body with `group`, `version`, `plural`, and `name`.
  */
 export async function DELETE(req: NextRequest) {
+  const unauthorized = await requireSession();
+  if (unauthorized) {
+    return unauthorized;
+  }
+
   try {
     const body = await req.json();
     const { group, version, plural, name } = body;
@@ -377,6 +406,10 @@ export async function DELETE(req: NextRequest) {
         },
         { status: 400 }
       );
+    }
+
+    if (!isAllowedResource(group, version, plural, 'delete')) {
+      return forbiddenResourceResponse('delete');
     }
 
     if (shouldUseCrossplaneMockMode()) {
@@ -419,6 +452,11 @@ export async function DELETE(req: NextRequest) {
  * Expects a JSON body with `group`, `version`, `plural`, `name`, and `patch`.
  */
 export async function PATCH(req: NextRequest) {
+  const unauthorized = await requireSession();
+  if (unauthorized) {
+    return unauthorized;
+  }
+
   try {
     const body = await req.json();
     const { group, version, plural, name, patch } = body;
@@ -431,6 +469,10 @@ export async function PATCH(req: NextRequest) {
         },
         { status: 400 }
       );
+    }
+
+    if (!isAllowedResource(group, version, plural, 'patch')) {
+      return forbiddenResourceResponse('patch');
     }
 
     if (shouldUseCrossplaneMockMode()) {
@@ -446,20 +488,8 @@ export async function PATCH(req: NextRequest) {
       getCustomObjectsApi() as /* eslint-disable-line @typescript-eslint/no-explicit-any */ any;
 
     const response = await k8sClient.patchClusterCustomObject(
-      group,
-      version,
-      plural,
-      name,
-      patch,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      {
-        headers: {
-          'Content-Type': k8s.PatchStrategy.MergePatch,
-        },
-      }
+      { group, version, plural, name, body: patch },
+      k8s.setHeaderOptions('Content-Type', k8s.PatchStrategy.MergePatch)
     );
 
     return NextResponse.json(

@@ -64,7 +64,7 @@ The repository also includes Kubernetes manifests and Azure deployment scripts t
 
 - Crossplane installation and provider configuration.
 - IDP application deployment manifests.
-- Internet-facing ingress configuration for the hosted portal.
+- An internet-facing HTTPS Gateway (Gateway API, AKS application routing) for the hosted portal.
 - Example Crossplane manifests for smoke testing, including Azure Storage.
 
 ## Documentation Layer

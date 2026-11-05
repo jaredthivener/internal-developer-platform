@@ -32,6 +32,10 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
+# Azure deploy logs (contain resource names and URLs)
+azure-up.log
+bootstrap.log
+
 # env files (can opt-in for committing if needed)
 .env*
 .azure/
@@ -42,3 +46,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+!.env.example
+
+# Playwright MCP snapshots and logs
+/.playwright-mcp/

@@ -1,0 +1,106 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: crossplane-stable
+  namespace: cluster-config
+spec:
+  interval: 24h
+  url: https://charts.crossplane.io/stable
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: crossplane
+  namespace: cluster-config
+spec:
+  interval: 30m
+  releaseName: crossplane
+  targetNamespace: crossplane-system
+  install:
+    createNamespace: true
+  chart:
+    spec:
+      chart: crossplane
+      version: 2.4.3
+      sourceRef:
+        kind: HelmRepository
+        name: crossplane-stable
+  values:
+    podSecurityContextCrossplane:
+      seccompProfile:
+        type: RuntimeDefault
+    podSecurityContextRBACManager:
+      seccompProfile:
+        type: RuntimeDefault
+    rbacManager:
+      skipAggregatedClusterRoles: true
+    # AKS Automatic's admission policy
+    # aks-managed-block-webhook-configs-targeting-protected-resources rejects any
+    # webhook configuration whose rules match `*` resources. Crossplane's only
+    # core one, crossplane-no-usages (Usage deletion protection, matches DELETE
+    # on */*), makes the init container fail. This repo uses no Usages, so turn
+    # the feature off and point init at a directory that is empty in the pinned
+    # image (/home/nonroot, created empty by Crossplane's image build). Provider
+    # CRD conversion webhooks are unaffected.
+    args:
+      - --enable-usages=false
+    extraEnvVarsCrossplaneInit:
+      WEBHOOK_CONFIGS_PATH: /home/nonroot
+  # The chart ships no probes; AKS deployment safeguards expect them.
+  postRenderers:
+    - kustomize:
+        patches:
+          - target:
+              kind: Deployment
+              name: crossplane
+            patch: |
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: crossplane
+              spec:
+                template:
+                  spec:
+                    containers:
+                      - name: crossplane
+                        readinessProbe:
+                          httpGet:
+                            path: /readyz
+                            port: readyz
+                          periodSeconds: 10
+                          timeoutSeconds: 1
+                          failureThreshold: 3
+                        livenessProbe:
+                          httpGet:
+                            path: /healthz
+                            port: readyz
+                          initialDelaySeconds: 30
+                          periodSeconds: 20
+                          timeoutSeconds: 1
+                          failureThreshold: 3
+          - target:
+              kind: Deployment
+              name: crossplane-rbac-manager
+            patch: |
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: crossplane-rbac-manager
+              spec:
+                template:
+                  spec:
+                    containers:
+                      - name: crossplane
+                        readinessProbe:
+                          tcpSocket:
+                            port: 8080
+                          periodSeconds: 10
+                          timeoutSeconds: 1
+                          failureThreshold: 3
+                        livenessProbe:
+                          tcpSocket:
+                            port: 8080
+                          initialDelaySeconds: 30
+                          periodSeconds: 20
+                          timeoutSeconds: 1
+                          failureThreshold: 3

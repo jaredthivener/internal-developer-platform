@@ -2,11 +2,8 @@ import { AuthOptions } from 'next-auth';
 import AzureADProvider from 'next-auth/providers/azure-ad';
 
 export const authOptions: AuthOptions = {
-  secret:
-    process.env.NEXTAUTH_SECRET ||
-    (process.env.IDP_ALLOW_OFFLINE_K8S === 'true'
-      ? 'local-dev-only-secret'
-      : undefined),
+  // No fallback: next-auth refuses to run in production without a secret.
+  secret: process.env.NEXTAUTH_SECRET,
   providers: [
     AzureADProvider({
       clientId: process.env.AZURE_AD_CLIENT_ID || '',
@@ -30,8 +27,5 @@ export const authOptions: AuthOptions = {
       }
       return session;
     },
-  },
-  pages: {
-    signIn: '/api/auth/signin',
   },
 };

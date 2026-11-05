@@ -76,7 +76,7 @@ export class AzureBlobDesiredStateStore implements DesiredStateStore {
     );
     const body = JSON.stringify(record, null, 2);
 
-    await blobClient.deleteIfExists();
+    // Put Blob replaces an existing blob in one operation.
     await blobClient.upload(body, Buffer.byteLength(body), {
       blobHTTPHeaders: { blobContentType: 'application/json' },
     });

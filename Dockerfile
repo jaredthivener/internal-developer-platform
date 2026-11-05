@@ -1,9 +1,6 @@
 FROM node:24-bookworm-slim AS deps
 WORKDIR /app
 
-# Update npm to the latest version to prevent out-of-date warnings
-RUN npm install -g npm@latest
-
 COPY package.json package-lock.json ./
 RUN npm ci
 
@@ -29,7 +26,8 @@ COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/.next/standalone ./
 
-USER nextjs
+# Numeric so Kubernetes runAsNonRoot can verify it.
+USER 1001:1001
 EXPOSE 3000
 
 CMD ["node", "server.js"]
