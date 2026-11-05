@@ -1,0 +1,8 @@
+{
+  "name": "deepmerge",
+  "version": "0.0.0-unused",
+  "private": true,
+  "description": "Placeholder for deepmerge, which @svgr/plugin-svgo 8.1.0 declares but never imports. Installed through an override in docs/package.json so the vulnerable deepmerge 4.3.1 (GHSA-gcqx-w48m-w2h4, no patched release) is not installed. Loading it throws.",
+  "main": "index.js",
+  "license": "MIT"
+}
