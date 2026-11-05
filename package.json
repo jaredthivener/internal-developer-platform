@@ -26,7 +26,7 @@
     "prepare": "husky"
   },
   "dependencies": {
-    "@azure/identity": "^4.13.1",
+    "@azure/identity": "^4.14.1",
     "@azure/storage-blob": "^12.31.0",
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
@@ -35,13 +35,13 @@
     "@mui/material": "^7.3.9",
     "@mui/material-nextjs": "^7.3.9",
     "@mui/system": "^7.3.9",
-    "next": "^16.2.6",
-    "next-auth": "^4.24.13",
+    "next": "^16.4.5",
+    "next-auth": "^4.24.15",
     "react": "19.2.4",
     "react-dom": "19.2.4"
   },
   "devDependencies": {
-    "@playwright/test": "^1.54.2",
+    "@playwright/test": "^1.64.1",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
@@ -51,14 +51,14 @@
     "@types/react-dom": "^19",
     "@vitejs/plugin-react": "^6.0.1",
     "eslint": "^9",
-    "eslint-config-next": "^16.2.1",
+    "eslint-config-next": "^16.4.5",
     "eslint-config-prettier": "^10.1.8",
     "husky": "^9.1.7",
     "jsdom": "^29.0.1",
     "lint-staged": "^16.4.0",
     "prettier": "^3.8.1",
     "typescript": "^5",
-    "vitest": "^4.1.2"
+    "vitest": "^4.1.12"
   },
   "overrides": {
     "cosmiconfig": {
@@ -80,6 +80,9 @@
     },
     "vitest": {
       "picomatch": "4.0.4"
+    },
+    "@typescript-eslint/typescript-estree": {
+      "minimatch": "^11.0.4"
     }
   },
   "lint-staged": {
