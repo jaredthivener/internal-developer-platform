@@ -84,7 +84,7 @@ The `idp-app-env` secret is built only from the platform Key Vault (`nextauth-se
 
 ## Pod Hardening
 
-`deployment.yaml` runs as UID 1001 with `runAsNonRoot`, a read-only root filesystem (`emptyDir` mounts for `/app/.next/cache` and `/tmp`), no privilege escalation, all capabilities dropped, and the `RuntimeDefault` seccomp profile. Probes target the unauthenticated `/api/health` route.
+`deployment.yaml` runs as UID 65532 with `runAsNonRoot`, a read-only root filesystem (`emptyDir` mounts for `/app/.next/cache` and `/tmp`), no privilege escalation, all capabilities dropped, and the `RuntimeDefault` seccomp profile. Probes target the unauthenticated `/api/health` route.
 
 ## Access Control
 
