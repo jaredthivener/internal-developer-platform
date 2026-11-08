@@ -5,7 +5,7 @@ WORKDIR /app
 ENV NPM_CONFIG_CACHE=/tmp/npm-cache
 
 COPY package.json package-lock.json ./
-RUN --mount=type=cache,target=/tmp/npm-cache,uid=65532,gid=65532 npm ci
+RUN npm ci
 
 FROM cgr.dev/chainguard/node:latest-dev@sha256:81d77836dacab0c421ab4fbbf1cc2ffe56f9bc64793c1b077bbc1a30d61e1c05 AS builder
 WORKDIR /app
@@ -14,7 +14,7 @@ ENV NPM_CONFIG_CACHE=/tmp/npm-cache
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-RUN --mount=type=cache,target=/tmp/npm-cache,uid=65532,gid=65532 npm run build
+RUN npm run build
 
 FROM cgr.dev/chainguard/node:latest@sha256:6a066f8decea77c67ef2772a78fad81df7a78a346d0b22a05fc9dac14537f2b0 AS runtime-clean
 COPY --from=builder /sbin/apk /sbin/apk
