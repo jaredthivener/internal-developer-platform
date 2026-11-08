@@ -74,7 +74,9 @@ run() {
         "aks get-versions"*) printf "%s" "${STUB_VERSIONS:-}" ;;
         "resource show"*) printf "%s" "${STUB_EXISTING_VERSION:-}" ;;
         "aks show"*oidcIssuerProfile*) echo "${STUB_ISSUER:-https://issuer.new/}" ;;
-        "aks show"*gatewayApi*) echo "${STUB_ADDON_STATE:-null null}" ;;
+        "aks show"*gatewayApi*) echo "${STUB_ADDON_STATE:-null null null null}" ;;
+        "aks approuting defaultdomain show"*) printf "%s" "${STUB_DOMAIN-0123456789abcdef01234567.westus3.aksapp.io}" ;;
+        "feature show"*) echo Registered ;;
         "identity federated-credential show"*) [[ -n "${STUB_FIC:-}" ]] && echo "$STUB_FIC" ;;
         "identity show"*) echo principal-oid ;;
         "aks nodepool show"*) printf "%s" "${STUB_POOL_STATE:-}" ;;
@@ -104,8 +106,6 @@ out="$(NEXTAUTH_EXTERNAL_URL=http://idp.example.com run $DEPLOY validate_inputs)
 check 'rejects an http NEXTAUTH URL' '[[ $? -ne 0 && "$out" == *"must use https"* ]]' "$out"
 out="$(run $DEPLOY 'validate_inputs && echo valid')"
 check 'accepts defaults (no host)' '[[ "$out" == *valid ]]' "$out"
-out="$(DNS_LABEL=Bad_Label run $DEPLOY validate_inputs)"
-check 'rejects an invalid DNS label' '[[ $? -ne 0 && "$out" == *"DNS_LABEL must be"* ]]' "$out"
 out="$(run $DEPLOY 'declare -p TLS_CERT_KEYVAULT_URI TLS_ISSUER 2>&1; declare -F ensure_tls_certificate deploy_gateway install_crossplane ensure_cert_manager')"
 check 'the Key Vault TLS path and imperative installs are gone' \
   '[[ "$out" != *"declare -"* && "$out" != *ensure_tls_certificate* && "$out" != *deploy_gateway* && "$out" != *install_crossplane* && "$out" != *ensure_cert_manager* ]]' "$out"
@@ -129,12 +129,12 @@ check 'tracks another pushed branch without comparing it to the checkout' '[[ "$
 
 # --- deploy: Flux settings and configuration ---------------------------------
 reset_logs
-settings='AZURE_TENANT_ID=t1 AZURE_SUBSCRIPTION_ID=s1 LOCATION=westus3 CROSSPLANE_CLIENT_ID=xp1 IDP_WEB_CLIENT_ID=web1 IMAGE_REF=acr1.azurecr.io/idp-web:1 WORKLOAD_ARCH=amd64 DNS_LABEL=lbl INGRESS_HOST=h.example; write_platform_settings'
+settings='AZURE_TENANT_ID=t1 AZURE_SUBSCRIPTION_ID=s1 LOCATION=westus3 CROSSPLANE_CLIENT_ID=xp1 IDP_WEB_CLIENT_ID=web1 IMAGE_REF=acr1.azurecr.io/idp-web:1 WORKLOAD_ARCH=amd64 INGRESS_HOST=h.example; write_platform_settings'
 run $DEPLOY "$settings" >/dev/null
 # shellcheck disable=SC2034 # read inside check's eval
 created="$(grep "create configmap idp-platform-settings" "$WORK_DIR/kubectl.log")"
 check 'writes the settings Flux substitutes, in the Flux configuration namespace' \
-  '[[ "$created" == "-n cluster-config create configmap idp-platform-settings "* && "$created" == *"--from-literal=IMAGE_REF=acr1.azurecr.io/idp-web:1 "* && "$created" == *"--from-literal=INGRESS_HOST=h.example "* && "$created" == *"--from-literal=ACME_SERVER=https://acme-v02.api.letsencrypt.org/directory "* ]]' \
+  '[[ "$created" == "-n cluster-config create configmap idp-platform-settings "* && "$created" == *"--from-literal=IMAGE_REF=acr1.azurecr.io/idp-web:1 "* && "$created" == *"--from-literal=INGRESS_HOST=h.example "* && "$created" != *DNS_LABEL* && "$created" != *ACME_SERVER* ]]' \
   "$(cat "$WORK_DIR/kubectl.log")"
 check 'labels the settings so Flux re-applies when they change' \
   'grep -q "label --local -f - reconcile.fluxcd.io/watch=Enabled" "$WORK_DIR/kubectl.log"' "$(cat "$WORK_DIR/kubectl.log")"
@@ -155,7 +155,7 @@ check 'updates the source of an existing Flux configuration instead of recreatin
 reset_logs
 out="$(STUB_DEPLOYED_IMAGE=acr1.azurecr.io/idp-web:2 run $DEPLOY 'IMAGE_REF=acr1.azurecr.io/idp-web:2; wait_for_platform && echo platform-ready')"
 check 'waits for every Flux Kustomization and the new image rollout' \
-  '[[ "$out" == *platform-ready ]] && [[ "$(grep -o "wait --for=condition=Ready kustomization/[a-z-]*" "$WORK_DIR/kubectl.log" | sed "s|.*/||" | tr "\n" " ")" == "crossplane crossplane-providers crossplane-configs cert-manager idp " ]] && grep -q "rollout status deployment/idp-web" "$WORK_DIR/kubectl.log"' \
+  '[[ "$out" == *platform-ready ]] && [[ "$(grep -o "wait --for=condition=Ready kustomization/[a-z-]*" "$WORK_DIR/kubectl.log" | sed "s|.*/||" | tr "\n" " ")" == "crossplane crossplane-providers crossplane-configs idp " ]] && grep -q "rollout status deployment/idp-web" "$WORK_DIR/kubectl.log"' \
   "$out$(cat "$WORK_DIR/kubectl.log")"
 out="$(STUB_DEPLOYED_IMAGE=acr1.azurecr.io/idp-web:1 run $DEPLOY 'IMAGE_REF=acr1.azurecr.io/idp-web:2; wait_for_platform')"
 check 'fails when Flux never rolls out the new image' '[[ $? -ne 0 && "$out" == *"still runs acr1.azurecr.io/idp-web:1"* ]]' "$out"
@@ -166,27 +166,37 @@ check 'checks the Git source first, then hands the cluster to Flux once its inpu
   '[[ "$order" == "resolve_gitops_source ensure_cluster_context build_and_push_image create_app_env_secret write_platform_settings ensure_flux_configuration wait_for_platform " ]]' "$order"
 
 # --- deploy: public endpoint -------------------------------------------------
-endpoint='AZURE_SUBSCRIPTION_ID=sub1 RESOURCE_GROUP=rg AKS_CLUSTER_NAME=idp-aks-auto LOCATION=westus3; resolve_public_endpoint; echo "label=$DNS_LABEL host=$INGRESS_HOST url=$NEXTAUTH_EXTERNAL_URL"'
+endpoint='RESOURCE_GROUP=rg AKS_CLUSTER_NAME=c; resolve_public_endpoint; echo "host=$INGRESS_HOST url=$NEXTAUTH_EXTERNAL_URL"'
+reset_logs
 out="$(run $DEPLOY "$endpoint")"
-# shellcheck disable=SC2034 # read inside check's eval
-out2="$(run $DEPLOY "$endpoint")"
-check 'derives a stable, valid Azure DNS label and cloudapp.azure.com host' \
-  '[[ "$out" =~ label=(idp-aks-auto-[0-9a-f]{8})\ host=([^ ]+)\ url=https://([^ ]+)$ ]] && [[ "${BASH_REMATCH[2]}" == "${BASH_REMATCH[1]}.westus3.cloudapp.azure.com" && "${BASH_REMATCH[3]}" == "${BASH_REMATCH[2]}" && "$out" == "$out2" ]]' \
-  "$out"
+check 'serves the portal one label below the cluster default domain' \
+  '[[ "$out" == *"host=idp.0123456789abcdef01234567.westus3.aksapp.io url=https://idp.0123456789abcdef01234567.westus3.aksapp.io" ]] && grep -q "aks approuting defaultdomain show --resource-group rg --name c --query domainName" "$WORK_DIR/az.log"' \
+  "$out$(cat "$WORK_DIR/az.log")"
 out="$(INGRESS_HOST=idp.example.com run $DEPLOY "$endpoint")"
-check 'keeps an explicit INGRESS_HOST' '[[ "$out" == *"host=idp.example.com url=https://idp.example.com" ]]' "$out"
+check 'ignores an INGRESS_HOST the managed certificate cannot cover' '[[ "$out" == *"host=idp.0123456789abcdef01234567.westus3.aksapp.io "* ]]' "$out"
+out="$(STUB_DOMAIN='' run $DEPLOY "$endpoint")"
+check 'fails when AKS never assigns a default domain' '[[ $? -ne 0 && "$out" == *"assigned no default domain"* ]]' "$out"
 
 # --- deploy: Gateway add-ons -------------------------------------------------
 reset_logs
-STUB_ADDON_STATE='Standard Enabled' run $DEPLOY 'RESOURCE_GROUP=rg AKS_CLUSTER_NAME=c; ensure_gateway_addons' >/dev/null
-check 'leaves Gateway add-ons alone when already enabled' \
-  '! grep -q "aks update" "$WORK_DIR/az.log"' "$(cat "$WORK_DIR/az.log")"
+STUB_ADDON_STATE='Standard Enabled true true' run $DEPLOY 'RESOURCE_GROUP=rg AKS_CLUSTER_NAME=c; ensure_gateway_addons' >/dev/null
+check 'leaves Gateway add-ons and the default domain alone when already enabled' \
+  '! grep -q -e "aks update" -e "aks approuting" "$WORK_DIR/az.log"' "$(cat "$WORK_DIR/az.log")"
 reset_logs
-STUB_ADDON_STATE='null null' run $DEPLOY 'RESOURCE_GROUP=rg AKS_CLUSTER_NAME=c; ensure_gateway_addons' >/dev/null
+STUB_ADDON_STATE='null null null null' run $DEPLOY 'RESOURCE_GROUP=rg AKS_CLUSTER_NAME=c; ensure_gateway_addons' >/dev/null
 check 'enables the managed Gateway API and app routing Istio when missing' \
   'grep -q "aks update.*--enable-gateway-api --enable-app-routing-istio" "$WORK_DIR/az.log"' "$(cat "$WORK_DIR/az.log")"
-check 'no longer enables the Key Vault CSI add-on or the app routing operator (cert-manager owns TLS)' \
-  '! grep -q -e "enable-addons" -e "approuting enable" "$WORK_DIR/az.log"' "$(cat "$WORK_DIR/az.log")"
+check 'turns on the app routing add-on with the default domain and no NGINX' \
+  'grep -q "^aks approuting enable --resource-group rg --name c --enable-default-domain --nginx None" "$WORK_DIR/az.log" && ! grep -q "approuting update" "$WORK_DIR/az.log"' "$(cat "$WORK_DIR/az.log")"
+check 'never enables the Key Vault CSI add-on' '! grep -q -e "enable-addons" -e "enable-kv" "$WORK_DIR/az.log"' "$(cat "$WORK_DIR/az.log")"
+reset_logs
+STUB_ADDON_STATE='Standard Enabled true false' run $DEPLOY 'RESOURCE_GROUP=rg AKS_CLUSTER_NAME=c; ensure_gateway_addons' >/dev/null
+check 'adds the default domain to an existing app routing add-on' \
+  'grep -q "^aks approuting update --resource-group rg --name c --enable-default-domain" "$WORK_DIR/az.log" && ! grep -q -e "approuting enable" -e "aks update" "$WORK_DIR/az.log"' "$(cat "$WORK_DIR/az.log")"
+out="$(run $DEPLOY 'declare -f main')"
+order="$(grep -oE "ensure_gateway_addons|resolve_public_endpoint|ensure_redirect_uri" <<<"$out" | tr '\n' ' ')"
+check 'reads the domain only after enabling it, and before registering the redirect URI' \
+  '[[ "$order" == "ensure_gateway_addons resolve_public_endpoint ensure_redirect_uri " ]]' "$order"
 
 # --- deploy: redirect URI ----------------------------------------------------
 reset_logs
@@ -330,6 +340,8 @@ reset_logs
 run $BOOTSTRAP 'register_prereqs' >/dev/null
 check 'registers the resource provider behind the Flux extension' \
   'grep -q "provider register --namespace Microsoft.KubernetesConfiguration" "$WORK_DIR/az.log"' "$(cat "$WORK_DIR/az.log")"
+check 'registers and waits for the hosted system and default domain preview features' \
+  '[[ "$(grep -oE "^feature (register|show) --name [A-Za-z-]+" "$WORK_DIR/az.log" | sort | tr "\n" ",")" == "feature register --name AKS-AutomaticHostedSystemProfilePreview,feature register --name DefaultDomainPreview,feature show --name AKS-AutomaticHostedSystemProfilePreview,feature show --name DefaultDomainPreview," ]]' "$(cat "$WORK_DIR/az.log")"
 
 # --- bootstrap: Key Vault secrets --------------------------------------------
 reset_logs

@@ -27,9 +27,12 @@ ARM64_MAX_COUNT="${ARM64_MAX_COUNT:-2}"
 # Empty means: the newest GA minor version AKS offers in LOCATION for a new
 # cluster, or the existing cluster's version on reruns.
 KUBERNETES_VERSION="${KUBERNETES_VERSION:-}"
-AZ_MIN_VERSION="2.77.0"
-AKS_PREVIEW_MIN_VERSION="19.0.0b15"
-AKS_PREVIEW_FEATURE="AKS-AutomaticHostedSystemProfilePreview"
+# The app routing default domain needs Azure CLI 2.86.0 and aks-preview 19.0.0b26.
+AZ_MIN_VERSION="2.86.0"
+AKS_PREVIEW_MIN_VERSION="19.0.0b26"
+# AKS Automatic hosted system, and the app routing default domain (*.aksapp.io
+# with a managed certificate and DNS) used for the portal's public hostname.
+AKS_PREVIEW_FEATURES=(AKS-AutomaticHostedSystemProfilePreview DefaultDomainPreview)
 FEATURE_REGISTRATION_TIMEOUT_SECONDS="${FEATURE_REGISTRATION_TIMEOUT_SECONDS:-900}"
 FEATURE_REGISTRATION_POLL_INTERVAL_SECONDS="${FEATURE_REGISTRATION_POLL_INTERVAL_SECONDS:-15}"
 CLUSTER_READY_TIMEOUT_SECONDS="${CLUSTER_READY_TIMEOUT_SECONDS:-1200}"
@@ -75,27 +78,28 @@ ensure_extension() {
 }
 
 wait_for_feature_registration() {
+  local feature="$1"
   local elapsed=0
   local feature_state=""
 
   while (( elapsed < FEATURE_REGISTRATION_TIMEOUT_SECONDS )); do
-    feature_state="$(az feature show --name "$AKS_PREVIEW_FEATURE" --namespace Microsoft.ContainerService --query properties.state -o tsv 2>/dev/null || true)"
+    feature_state="$(az feature show --name "$feature" --namespace Microsoft.ContainerService --query properties.state -o tsv 2>/dev/null || true)"
 
     if [[ "$feature_state" == "Registered" ]]; then
       return 0
     fi
 
     if [[ -z "$feature_state" ]]; then
-      log "Waiting for feature $AKS_PREVIEW_FEATURE to become visible"
+      log "Waiting for feature $feature to become visible"
     else
-      log "Waiting for feature $AKS_PREVIEW_FEATURE registration. Current state: $feature_state"
+      log "Waiting for feature $feature registration. Current state: $feature_state"
     fi
 
     sleep "$FEATURE_REGISTRATION_POLL_INTERVAL_SECONDS"
     elapsed=$((elapsed + FEATURE_REGISTRATION_POLL_INTERVAL_SECONDS))
   done
 
-  fail "Feature $AKS_PREVIEW_FEATURE did not reach Registered within ${FEATURE_REGISTRATION_TIMEOUT_SECONDS}s. Check the subscription feature state manually with: az feature show --name $AKS_PREVIEW_FEATURE --namespace Microsoft.ContainerService"
+  fail "Feature $feature did not reach Registered within ${FEATURE_REGISTRATION_TIMEOUT_SECONDS}s. Check the subscription feature state manually with: az feature show --name $feature --namespace Microsoft.ContainerService"
 }
 
 register_prereqs() {
@@ -107,12 +111,14 @@ register_prereqs() {
   # Flux configurations and the microsoft.flux cluster extension.
   az provider register --namespace Microsoft.KubernetesConfiguration >/dev/null
 
-  log "Ensuring AKS Automatic hosted system preview feature is registered"
-  az feature register \
-    --name "$AKS_PREVIEW_FEATURE" \
-    --namespace Microsoft.ContainerService >/dev/null 2>&1 || true
-
-  wait_for_feature_registration
+  local feature
+  for feature in "${AKS_PREVIEW_FEATURES[@]}"; do
+    log "Ensuring preview feature $feature is registered"
+    az feature register --name "$feature" --namespace Microsoft.ContainerService >/dev/null 2>&1 || true
+  done
+  for feature in "${AKS_PREVIEW_FEATURES[@]}"; do
+    wait_for_feature_registration "$feature"
+  done
 
   log "Refreshing Microsoft.ContainerService provider registration"
   az provider register --namespace Microsoft.ContainerService >/dev/null

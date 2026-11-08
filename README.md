@@ -68,15 +68,15 @@ After the cluster exists, deploy with:
 bash scripts/azure/deploy-platform-to-aks.sh
 ```
 
-Everything inside the cluster is deployed by **Flux** (the AKS GitOps extension, `microsoft.flux`) from this repository: Crossplane and cert-manager as `HelmRelease`s, the Crossplane providers and configs, and the portal. Flux syncs the branch you have checked out, as pushed to `origin`, so commit and push before deploying; the script stops if your branch has unpushed commits or uncommitted `platform/` changes. Set `GITOPS_BRANCH=main` to track another pushed branch.
+Everything inside the cluster is deployed by **Flux** (the AKS GitOps extension, `microsoft.flux`) from this repository: Crossplane as a `HelmRelease`, the Crossplane providers and configs, and the portal. Flux syncs the branch you have checked out, as pushed to `origin`, so commit and push before deploying; the script stops if your branch has unpushed commits or uncommitted `platform/` changes. Set `GITOPS_BRANCH=main` to track another pushed branch.
 
-The portal is always published on HTTPS (Entra ID only accepts `https` redirect URIs). With no inputs it gives the Gateway's public IP an Azure DNS label (`<label>.<region>.cloudapp.azure.com`) and cert-manager issues a trusted Let's Encrypt certificate for it. For your own domain, set `INGRESS_HOST` and point its DNS at the Gateway.
+The portal is always published on HTTPS (Entra ID only accepts `https` redirect URIs), at `idp.<id>.<region>.aksapp.io` under the cluster's [app routing default domain](https://learn.microsoft.com/azure/aks/app-routing-default-domain): AKS owns that domain, its trusted wildcard certificate and its DNS records. The default domain is an AKS preview feature (no SLA); the bootstrap registers its `DefaultDomainPreview` flag.
 
 What the deploy script does:
 
 - Reuses an existing ACR from the target resource group when one already exists, otherwise creates a new Basic ACR and attaches it to the AKS cluster.
 - Builds the Next.js app as a standalone container image and pushes it to ACR.
-- Enables the managed Gateway API and the application routing Gateway implementation (`approuting-istio`) if missing.
+- Enables the managed Gateway API, the application routing Gateway implementation (`approuting-istio`) and the app routing add-on with its default domain (no NGINX) if missing.
 - Registers `https://<host>/api/auth/callback/azure-ad` on the portal app registration.
 - Creates the app's secret from Key Vault and writes the per-cluster values Flux substitutes (Azure IDs, hostname, image) to the `idp-platform-settings` ConfigMap.
 - Creates (or repoints) the Flux configuration `idp-platform`, then waits until every Flux `Kustomization` is ready and the new image is rolled out.
@@ -84,8 +84,7 @@ What the deploy script does:
 What Flux deploys (versions pinned in Git; see [platform/kubernetes/idp/README.md](platform/kubernetes/idp/README.md#gitops)):
 
 - Crossplane 2.4.3 into `crossplane-system`, the Azure provider packages v2.8.0 (resource groups, networking, storage, PostgreSQL, AKS), workload identity `ProviderConfig`/`ClusterProviderConfig` objects and a smoke-test `ResourceGroup`.
-- cert-manager v1.21.3, a Let's Encrypt `ClusterIssuer` and the Gateway's certificate.
-- The portal in `idp-system` and its TLS `Gateway` with an HTTP-to-HTTPS redirect.
+- The portal in `idp-system`, its TLS `Gateway` with an HTTP-to-HTTPS redirect, and a `DefaultDomainCertificate` that has AKS put the managed certificate in the Gateway's Secret.
 
 Important deploy behavior:
 

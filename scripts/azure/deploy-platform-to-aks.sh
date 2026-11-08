@@ -31,14 +31,10 @@ FLUX_CONFIG_NAME="${FLUX_CONFIG_NAME:-idp-platform}"
 # Must match the namespace of the Flux objects in platform/gitops.
 FLUX_NAMESPACE=cluster-config
 FLUX_TIMEOUT="${FLUX_TIMEOUT:-20m}"
-# Azure DNS label on the Gateway's public IP. Defaults to a stable value derived
-# from the subscription, resource group and cluster.
-DNS_LABEL="${DNS_LABEL:-}"
-# Defaults to <DNS_LABEL>.<LOCATION>.cloudapp.azure.com; set it for your own domain.
-INGRESS_HOST="${INGRESS_HOST:-}"
-# Let's Encrypt staging (https://acme-staging-v02.api.letsencrypt.org/directory)
-# avoids production rate limits while testing.
-ACME_SERVER="${ACME_SERVER:-https://acme-v02.api.letsencrypt.org/directory}"
+# The portal is served on idp.<id>.<region>.aksapp.io, a host under the
+# cluster's app routing default domain: AKS owns that domain, its wildcard
+# certificate and its DNS records.
+INGRESS_HOST=""
 NEXTAUTH_EXTERNAL_URL="${NEXTAUTH_EXTERNAL_URL:-}"
 
 log() {
@@ -96,20 +92,34 @@ ensure_cluster_context() {
   wait_for_cluster_authorization
 }
 
-# The managed Gateway API CRDs and the application routing Gateway API
-# implementation (GatewayClass approuting-istio). New AKS Automatic clusters on
-# 1.37 ship without them.
+# The managed Gateway API CRDs, the application routing Gateway API
+# implementation (GatewayClass approuting-istio), and the app routing add-on
+# with its default domain (a *.aksapp.io domain, managed wildcard certificate
+# and managed external-dns). New AKS Automatic clusters on 1.37 ship without
+# them; the default domain is a preview feature (DefaultDomainPreview).
 ensure_gateway_addons() {
-  local state gateway_api istio
+  local state gateway_api istio app_routing default_domain
   state="$(az aks show --resource-group "$RESOURCE_GROUP" --name "$AKS_CLUSTER_NAME" \
-    --query "join(' ', [to_string(ingressProfile.gatewayApi.installation), to_string(ingressProfile.webAppRouting.gatewayApiImplementations.appRoutingIstio.mode)])" -o tsv)"
-  log "Gateway add-on state (gatewayApi appRoutingIstio): $state"
-  read -r gateway_api istio <<<"$state"
+    --query "join(' ', [to_string(ingressProfile.gatewayApi.installation), to_string(ingressProfile.webAppRouting.gatewayApiImplementations.appRoutingIstio.mode), to_string(ingressProfile.webAppRouting.enabled), to_string(ingressProfile.webAppRouting.defaultDomain.enabled)])" -o tsv)"
+  log "Gateway add-on state (gatewayApi appRoutingIstio appRouting defaultDomain): $state"
+  read -r gateway_api istio app_routing default_domain <<<"$state"
 
   if [[ "$gateway_api" != Standard || "$istio" != Enabled ]]; then
     log "Enabling managed Gateway API and the application routing Gateway implementation"
     az aks update --resource-group "$RESOURCE_GROUP" --name "$AKS_CLUSTER_NAME" \
       --enable-gateway-api --enable-app-routing-istio --output none
+  fi
+
+  if [[ "$default_domain" != true ]]; then
+    log "Enabling the app routing default domain"
+    if [[ "$app_routing" == true ]]; then
+      az aks approuting update --resource-group "$RESOURCE_GROUP" --name "$AKS_CLUSTER_NAME" \
+        --enable-default-domain --output none
+    else
+      # --nginx None: the portal uses the Gateway API, not an NGINX ingress.
+      az aks approuting enable --resource-group "$RESOURCE_GROUP" --name "$AKS_CLUSTER_NAME" \
+        --enable-default-domain --nginx None --output none
+    fi
   fi
 }
 
@@ -134,9 +144,6 @@ detect_workload_arch() {
 
 # Checks explicit inputs before anything touches Azure or the cluster.
 validate_inputs() {
-  if [[ -n "$DNS_LABEL" && ! "$DNS_LABEL" =~ ^[a-z][a-z0-9-]{1,61}[a-z0-9]$ ]]; then
-    fail "DNS_LABEL must be 3-63 lowercase letters, digits or hyphens, starting with a letter (got '$DNS_LABEL')."
-  fi
   if [[ -n "$NEXTAUTH_EXTERNAL_URL" && "$NEXTAUTH_EXTERNAL_URL" != https://* ]]; then
     fail "NEXTAUTH_EXTERNAL_URL must use https (got $NEXTAUTH_EXTERNAL_URL). Entra ID only accepts https redirect URIs outside localhost."
   fi
@@ -166,18 +173,23 @@ resolve_gitops_source() {
 }
 
 # Entra ID only accepts https redirect URIs outside localhost, so the portal is
-# always published on https://INGRESS_HOST.
-# Stable per subscription, resource group and cluster, so reruns and recreated
-# Gateways keep the same hostname.
-default_dns_label() {
-  local digest
-  digest="$(printf '%s' "$AZURE_SUBSCRIPTION_ID/$RESOURCE_GROUP/$AKS_CLUSTER_NAME" | openssl dgst -sha256 -r | cut -c1-8)"
-  printf '%s-%s' "$(printf '%s' "$AKS_CLUSTER_NAME" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9-' | cut -c1-40)" "$digest"
-}
-
+# always published on https://INGRESS_HOST. The default domain is assigned
+# once per cluster and kept across disable/enable, so reruns keep the host.
 resolve_public_endpoint() {
-  DNS_LABEL="${DNS_LABEL:-$(default_dns_label)}"
-  INGRESS_HOST="${INGRESS_HOST:-${DNS_LABEL}.${LOCATION}.cloudapp.azure.com}"
+  local domain="" attempt
+  for attempt in $(seq 1 30); do
+    domain="$(az aks approuting defaultdomain show --resource-group "$RESOURCE_GROUP" --name "$AKS_CLUSTER_NAME" \
+      --query domainName -o tsv 2>/dev/null || true)"
+    [[ -n "$domain" ]] && break
+    log "Waiting for AKS to assign the default domain (attempt $attempt/30)"
+    sleep 10
+  done
+  [[ -n "$domain" ]] \
+    || fail "AKS assigned no default domain. Check: az aks approuting defaultdomain show --resource-group $RESOURCE_GROUP --name $AKS_CLUSTER_NAME"
+
+  # The managed certificate is a wildcard, so the host is exactly one label
+  # below the domain.
+  INGRESS_HOST="idp.$domain"
   NEXTAUTH_EXTERNAL_URL="${NEXTAUTH_EXTERNAL_URL:-https://$INGRESS_HOST}"
   log "Public URL: $NEXTAUTH_EXTERNAL_URL"
 }
@@ -323,9 +335,7 @@ write_platform_settings() {
     --from-literal=IDP_WEB_CLIENT_ID="$IDP_WEB_CLIENT_ID" \
     --from-literal=IMAGE_REF="$IMAGE_REF" \
     --from-literal=WORKLOAD_ARCH="$WORKLOAD_ARCH" \
-    --from-literal=DNS_LABEL="$DNS_LABEL" \
     --from-literal=INGRESS_HOST="$INGRESS_HOST" \
-    --from-literal=ACME_SERVER="$ACME_SERVER" \
     --dry-run=client -o yaml \
     | kubectl label --local -f - reconcile.fluxcd.io/watch=Enabled -o yaml \
     | kubectl_apply
@@ -350,7 +360,7 @@ ensure_flux_configuration() {
 
 wait_for_platform() {
   local ks attempt deployed=""
-  for ks in crossplane crossplane-providers crossplane-configs cert-manager idp; do
+  for ks in crossplane crossplane-providers crossplane-configs idp; do
     for attempt in $(seq 1 30); do
       kubectl -n "$FLUX_NAMESPACE" get kustomization "$ks" >/dev/null 2>&1 && break
       log "Waiting for Flux to create Kustomization $ks (attempt $attempt/30)"

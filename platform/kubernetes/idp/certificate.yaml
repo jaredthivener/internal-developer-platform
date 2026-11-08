@@ -1,36 +1,11 @@
-# Let's Encrypt issuer for the portal's Gateway certificate. HTTP-01 challenges
-# are answered through the Gateway's plain-HTTP listener; the solver's
-# exact-path route takes precedence over the HTTPS redirect route.
-apiVersion: cert-manager.io/v1
-kind: ClusterIssuer
-metadata:
-  name: letsencrypt
-spec:
-  acme:
-    server: ${ACME_SERVER}
-    privateKeySecretRef:
-      name: letsencrypt-account-key
-    solvers:
-      - http01:
-          gatewayHTTPRoute:
-            serviceType: ClusterIP
-            parentRefs:
-              - kind: Gateway
-                name: idp-web
-                namespace: idp-system
-                sectionName: http
----
-apiVersion: cert-manager.io/v1
-kind: Certificate
+# The Gateway's certificate: AKS issues a publicly trusted wildcard certificate
+# for the cluster's app routing default domain (*.<id>.<region>.aksapp.io),
+# renews it, and keeps it in the Secret idp-web-tls in this namespace.
+apiVersion: approuting.kubernetes.azure.com/v1alpha1
+kind: DefaultDomainCertificate
 metadata:
   name: idp-web-tls
   namespace: idp-system
 spec:
-  secretName: idp-web-tls
-  dnsNames:
-    - ${INGRESS_HOST}
-  issuerRef:
-    kind: ClusterIssuer
-    name: letsencrypt
-  privateKey:
-    rotationPolicy: Always
+  target:
+    secret: idp-web-tls

@@ -82,34 +82,22 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: cert-manager
-  namespace: cluster-config
-spec:
-  interval: 30m
-  retryInterval: 2m
-  timeout: 10m
-  path: ./platform/kubernetes/cert-manager
-  prune: true
-  wait: true
-  sourceRef:
-    kind: GitRepository
-    name: idp-platform
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   name: idp
   namespace: cluster-config
 spec:
-  dependsOn:
-    - name: cert-manager
   interval: 30m
   retryInterval: 2m
-  # Includes the first Let's Encrypt issuance.
+  # Includes the first issuance of the managed certificate.
   timeout: 15m
   path: ./platform/kubernetes/idp
   prune: true
   wait: true
+  # The managed certificate reports Available, not Ready; without this Flux
+  # would count it ready before the Secret exists.
+  healthCheckExprs:
+    - apiVersion: approuting.kubernetes.azure.com/v1alpha1
+      kind: DefaultDomainCertificate
+      current: status.conditions.exists(e, e.type == 'Available' && e.status == 'True')
   sourceRef:
     kind: GitRepository
     name: idp-platform
