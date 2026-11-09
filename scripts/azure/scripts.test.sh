@@ -24,6 +24,7 @@ run() {
     sleep() { :; }
     kubectl() {
       printf "%s\n" "$*" >> "$WORK_DIR/kubectl.log"
+      printf "kubectl %s\n" "$*" >> "$WORK_DIR/calls.log"
       local arg
       for arg in "$@"; do
         [[ "$arg" == --from-env-file=* ]] && cp "${arg#--from-env-file=}" "$WORK_DIR/secret.env"
@@ -34,6 +35,10 @@ run() {
       fi
       [[ "$*" == "apply -f -" ]] && { cat >> "$WORK_DIR/applied.yaml"; echo "---" >> "$WORK_DIR/applied.yaml"; }
       [[ "$*" == *"get deployment idp-web"* ]] && printf "%s" "${STUB_DEPLOYED_IMAGE:-}"
+      [[ "$*" == "auth can-i"* ]] && echo yes
+      [[ "$*" == "api-resources --categories managed"* ]] && printf "%s" "${STUB_MANAGED_TYPES-resourcegroups.azure.m.upbound.io}"
+      [[ "$*" == *"get kustomizations"* ]] && printf "%s" "${STUB_KUSTOMIZATIONS-kustomization.kustomize.toolkit.fluxcd.io/idp}"
+      [[ "$*" == "get managed"* ]] && printf "%s" "${STUB_REMAINING_MANAGED:-}"
       return 0
     }
     git() {
@@ -49,7 +54,20 @@ run() {
     }
     az() {
       printf "%s\n" "$*" >> "$WORK_DIR/az.log"
+      printf "az %s\n" "$*" >> "$WORK_DIR/calls.log"
       case "$*" in
+        "account show"*) echo sub1 ;;
+        "aks show --resource-group rg --name c --output none") [[ "${STUB_CLUSTER:-yes}" == yes ]] ;;
+        "group exists"*) echo "${STUB_GROUP_EXISTS:-true}" ;;
+        "role assignment list --all --assignee-object-id"*) printf "%s" "${STUB_ROLE_IDS-$'"'"'/ra/1\n/ra/2'"'"'}" ;;
+        "ad app show"*"--query id"*) echo app-object-id ;;
+        "keyvault show-deleted"*purgeProtection*) echo "${STUB_PURGE_PROTECTION:-}" ;;
+        "keyvault show-deleted"*) [[ "${STUB_KV_DELETED:-yes}" == yes ]] ;;
+        "resource list --resource-group rg --resource-type"*) printf "%s" "${STUB_RG_DCRS-/rg/dcr}" ;;
+        "resource list --resource-type"*) printf "%s" "${STUB_ALL_DCRS:-}" ;;
+        "resource list --resource-group"*"length(@)"*) echo "${STUB_GROUP_RESOURCES:-0}" ;;
+        "resource show --ids"*monitoringAccounts*) printf "%s" "${STUB_WORKSPACE-/subscriptions/sub1/resourceGroups/DefaultResourceGroup-westus3/providers/microsoft.monitor/accounts/DefaultAzureMonitorWorkspace-westus3}" ;;
+        "resource show --ids "*"--query id"*) a="$*"; a="${a#resource show --ids }"; echo "${a%% *}" ;;
         "ad signed-in-user show"*) echo user-oid ;;
         "ad app list"*) printf "%s" "${STUB_APP_IDS:-}" ;;
         "ad app create"*) echo new-app-id ;;
@@ -74,7 +92,9 @@ run() {
         "aks get-versions"*) printf "%s" "${STUB_VERSIONS:-}" ;;
         "resource show"*) printf "%s" "${STUB_EXISTING_VERSION:-}" ;;
         "aks show"*oidcIssuerProfile*) echo "${STUB_ISSUER:-https://issuer.new/}" ;;
-        "aks show"*gatewayApi*) echo "${STUB_ADDON_STATE:-null null}" ;;
+        "aks show"*gatewayApi*) echo "${STUB_ADDON_STATE:-null null null null}" ;;
+        "aks approuting defaultdomain show"*) printf "%s" "${STUB_DOMAIN-0123456789abcdef01234567.westus3.aksapp.io}" ;;
+        "feature show"*) echo Registered ;;
         "identity federated-credential show"*) [[ -n "${STUB_FIC:-}" ]] && echo "$STUB_FIC" ;;
         "identity show"*) echo principal-oid ;;
         "aks nodepool show"*) printf "%s" "${STUB_POOL_STATE:-}" ;;
@@ -85,7 +105,7 @@ run() {
   ' _ "$1" "$AZURE_DIR" "$2" 2>&1
 }
 
-reset_logs() { rm -f "$WORK_DIR"/az.log "$WORK_DIR"/kubectl.log "$WORK_DIR"/git.log "$WORK_DIR"/applied.yaml "$WORK_DIR"/kv-writes "$WORK_DIR"/secret.env "$WORK_DIR"/policy.json; }
+reset_logs() { rm -f "$WORK_DIR"/calls.log "$WORK_DIR"/az.log "$WORK_DIR"/kubectl.log "$WORK_DIR"/git.log "$WORK_DIR"/applied.yaml "$WORK_DIR"/kv-writes "$WORK_DIR"/secret.env "$WORK_DIR"/policy.json; }
 
 check() { # description, condition (evaluated), [context to print on failure]
   if eval "$2"; then
@@ -104,8 +124,6 @@ out="$(NEXTAUTH_EXTERNAL_URL=http://idp.example.com run $DEPLOY validate_inputs)
 check 'rejects an http NEXTAUTH URL' '[[ $? -ne 0 && "$out" == *"must use https"* ]]' "$out"
 out="$(run $DEPLOY 'validate_inputs && echo valid')"
 check 'accepts defaults (no host)' '[[ "$out" == *valid ]]' "$out"
-out="$(DNS_LABEL=Bad_Label run $DEPLOY validate_inputs)"
-check 'rejects an invalid DNS label' '[[ $? -ne 0 && "$out" == *"DNS_LABEL must be"* ]]' "$out"
 out="$(run $DEPLOY 'declare -p TLS_CERT_KEYVAULT_URI TLS_ISSUER 2>&1; declare -F ensure_tls_certificate deploy_gateway install_crossplane ensure_cert_manager')"
 check 'the Key Vault TLS path and imperative installs are gone' \
   '[[ "$out" != *"declare -"* && "$out" != *ensure_tls_certificate* && "$out" != *deploy_gateway* && "$out" != *install_crossplane* && "$out" != *ensure_cert_manager* ]]' "$out"
@@ -129,12 +147,12 @@ check 'tracks another pushed branch without comparing it to the checkout' '[[ "$
 
 # --- deploy: Flux settings and configuration ---------------------------------
 reset_logs
-settings='AZURE_TENANT_ID=t1 AZURE_SUBSCRIPTION_ID=s1 LOCATION=westus3 CROSSPLANE_CLIENT_ID=xp1 IDP_WEB_CLIENT_ID=web1 IMAGE_REF=acr1.azurecr.io/idp-web:1 WORKLOAD_ARCH=amd64 DNS_LABEL=lbl INGRESS_HOST=h.example; write_platform_settings'
+settings='AZURE_TENANT_ID=t1 AZURE_SUBSCRIPTION_ID=s1 LOCATION=westus3 CROSSPLANE_CLIENT_ID=xp1 IDP_WEB_CLIENT_ID=web1 IMAGE_REF=acr1.azurecr.io/idp-web:1 WORKLOAD_ARCH=amd64 INGRESS_HOST=h.example; write_platform_settings'
 run $DEPLOY "$settings" >/dev/null
 # shellcheck disable=SC2034 # read inside check's eval
 created="$(grep "create configmap idp-platform-settings" "$WORK_DIR/kubectl.log")"
 check 'writes the settings Flux substitutes, in the Flux configuration namespace' \
-  '[[ "$created" == "-n cluster-config create configmap idp-platform-settings "* && "$created" == *"--from-literal=IMAGE_REF=acr1.azurecr.io/idp-web:1 "* && "$created" == *"--from-literal=INGRESS_HOST=h.example "* && "$created" == *"--from-literal=ACME_SERVER=https://acme-v02.api.letsencrypt.org/directory "* ]]' \
+  '[[ "$created" == "-n cluster-config create configmap idp-platform-settings "* && "$created" == *"--from-literal=IMAGE_REF=acr1.azurecr.io/idp-web:1 "* && "$created" == *"--from-literal=INGRESS_HOST=h.example "* && "$created" != *DNS_LABEL* && "$created" != *ACME_SERVER* ]]' \
   "$(cat "$WORK_DIR/kubectl.log")"
 check 'labels the settings so Flux re-applies when they change' \
   'grep -q "label --local -f - reconcile.fluxcd.io/watch=Enabled" "$WORK_DIR/kubectl.log"' "$(cat "$WORK_DIR/kubectl.log")"
@@ -155,7 +173,7 @@ check 'updates the source of an existing Flux configuration instead of recreatin
 reset_logs
 out="$(STUB_DEPLOYED_IMAGE=acr1.azurecr.io/idp-web:2 run $DEPLOY 'IMAGE_REF=acr1.azurecr.io/idp-web:2; wait_for_platform && echo platform-ready')"
 check 'waits for every Flux Kustomization and the new image rollout' \
-  '[[ "$out" == *platform-ready ]] && [[ "$(grep -o "wait --for=condition=Ready kustomization/[a-z-]*" "$WORK_DIR/kubectl.log" | sed "s|.*/||" | tr "\n" " ")" == "crossplane crossplane-providers crossplane-configs cert-manager idp " ]] && grep -q "rollout status deployment/idp-web" "$WORK_DIR/kubectl.log"' \
+  '[[ "$out" == *platform-ready ]] && [[ "$(grep -o "wait --for=condition=Ready kustomization/[a-z-]*" "$WORK_DIR/kubectl.log" | sed "s|.*/||" | tr "\n" " ")" == "crossplane crossplane-providers crossplane-configs idp " ]] && grep -q "rollout status deployment/idp-web" "$WORK_DIR/kubectl.log"' \
   "$out$(cat "$WORK_DIR/kubectl.log")"
 out="$(STUB_DEPLOYED_IMAGE=acr1.azurecr.io/idp-web:1 run $DEPLOY 'IMAGE_REF=acr1.azurecr.io/idp-web:2; wait_for_platform')"
 check 'fails when Flux never rolls out the new image' '[[ $? -ne 0 && "$out" == *"still runs acr1.azurecr.io/idp-web:1"* ]]' "$out"
@@ -166,27 +184,37 @@ check 'checks the Git source first, then hands the cluster to Flux once its inpu
   '[[ "$order" == "resolve_gitops_source ensure_cluster_context build_and_push_image create_app_env_secret write_platform_settings ensure_flux_configuration wait_for_platform " ]]' "$order"
 
 # --- deploy: public endpoint -------------------------------------------------
-endpoint='AZURE_SUBSCRIPTION_ID=sub1 RESOURCE_GROUP=rg AKS_CLUSTER_NAME=idp-aks-auto LOCATION=westus3; resolve_public_endpoint; echo "label=$DNS_LABEL host=$INGRESS_HOST url=$NEXTAUTH_EXTERNAL_URL"'
+endpoint='RESOURCE_GROUP=rg AKS_CLUSTER_NAME=c; resolve_public_endpoint; echo "host=$INGRESS_HOST url=$NEXTAUTH_EXTERNAL_URL"'
+reset_logs
 out="$(run $DEPLOY "$endpoint")"
-# shellcheck disable=SC2034 # read inside check's eval
-out2="$(run $DEPLOY "$endpoint")"
-check 'derives a stable, valid Azure DNS label and cloudapp.azure.com host' \
-  '[[ "$out" =~ label=(idp-aks-auto-[0-9a-f]{8})\ host=([^ ]+)\ url=https://([^ ]+)$ ]] && [[ "${BASH_REMATCH[2]}" == "${BASH_REMATCH[1]}.westus3.cloudapp.azure.com" && "${BASH_REMATCH[3]}" == "${BASH_REMATCH[2]}" && "$out" == "$out2" ]]' \
-  "$out"
+check 'serves the portal one label below the cluster default domain' \
+  '[[ "$out" == *"host=idp.0123456789abcdef01234567.westus3.aksapp.io url=https://idp.0123456789abcdef01234567.westus3.aksapp.io" ]] && grep -q "aks approuting defaultdomain show --resource-group rg --name c --query domainName" "$WORK_DIR/az.log"' \
+  "$out$(cat "$WORK_DIR/az.log")"
 out="$(INGRESS_HOST=idp.example.com run $DEPLOY "$endpoint")"
-check 'keeps an explicit INGRESS_HOST' '[[ "$out" == *"host=idp.example.com url=https://idp.example.com" ]]' "$out"
+check 'ignores an INGRESS_HOST the managed certificate cannot cover' '[[ "$out" == *"host=idp.0123456789abcdef01234567.westus3.aksapp.io "* ]]' "$out"
+out="$(STUB_DOMAIN='' run $DEPLOY "$endpoint")"
+check 'fails when AKS never assigns a default domain' '[[ $? -ne 0 && "$out" == *"assigned no default domain"* ]]' "$out"
 
 # --- deploy: Gateway add-ons -------------------------------------------------
 reset_logs
-STUB_ADDON_STATE='Standard Enabled' run $DEPLOY 'RESOURCE_GROUP=rg AKS_CLUSTER_NAME=c; ensure_gateway_addons' >/dev/null
-check 'leaves Gateway add-ons alone when already enabled' \
-  '! grep -q "aks update" "$WORK_DIR/az.log"' "$(cat "$WORK_DIR/az.log")"
+STUB_ADDON_STATE='Standard Enabled true true' run $DEPLOY 'RESOURCE_GROUP=rg AKS_CLUSTER_NAME=c; ensure_gateway_addons' >/dev/null
+check 'leaves Gateway add-ons and the default domain alone when already enabled' \
+  '! grep -q -e "aks update" -e "aks approuting" "$WORK_DIR/az.log"' "$(cat "$WORK_DIR/az.log")"
 reset_logs
-STUB_ADDON_STATE='null null' run $DEPLOY 'RESOURCE_GROUP=rg AKS_CLUSTER_NAME=c; ensure_gateway_addons' >/dev/null
+STUB_ADDON_STATE='null null null null' run $DEPLOY 'RESOURCE_GROUP=rg AKS_CLUSTER_NAME=c; ensure_gateway_addons' >/dev/null
 check 'enables the managed Gateway API and app routing Istio when missing' \
   'grep -q "aks update.*--enable-gateway-api --enable-app-routing-istio" "$WORK_DIR/az.log"' "$(cat "$WORK_DIR/az.log")"
-check 'no longer enables the Key Vault CSI add-on or the app routing operator (cert-manager owns TLS)' \
-  '! grep -q -e "enable-addons" -e "approuting enable" "$WORK_DIR/az.log"' "$(cat "$WORK_DIR/az.log")"
+check 'turns on the app routing add-on with the default domain and no NGINX' \
+  'grep -q "^aks approuting enable --resource-group rg --name c --enable-default-domain --nginx None" "$WORK_DIR/az.log" && ! grep -q "approuting update" "$WORK_DIR/az.log"' "$(cat "$WORK_DIR/az.log")"
+check 'never enables the Key Vault CSI add-on' '! grep -q -e "enable-addons" -e "enable-kv" "$WORK_DIR/az.log"' "$(cat "$WORK_DIR/az.log")"
+reset_logs
+STUB_ADDON_STATE='Standard Enabled true false' run $DEPLOY 'RESOURCE_GROUP=rg AKS_CLUSTER_NAME=c; ensure_gateway_addons' >/dev/null
+check 'adds the default domain to an existing app routing add-on' \
+  'grep -q "^aks approuting update --resource-group rg --name c --enable-default-domain" "$WORK_DIR/az.log" && ! grep -q -e "approuting enable" -e "aks update" "$WORK_DIR/az.log"' "$(cat "$WORK_DIR/az.log")"
+out="$(run $DEPLOY 'declare -f main')"
+order="$(grep -oE "ensure_gateway_addons|resolve_public_endpoint|ensure_redirect_uri" <<<"$out" | tr '\n' ' ')"
+check 'reads the domain only after enabling it, and before registering the redirect URI' \
+  '[[ "$order" == "ensure_gateway_addons resolve_public_endpoint ensure_redirect_uri " ]]' "$order"
 
 # --- deploy: redirect URI ----------------------------------------------------
 reset_logs
@@ -330,6 +358,8 @@ reset_logs
 run $BOOTSTRAP 'register_prereqs' >/dev/null
 check 'registers the resource provider behind the Flux extension' \
   'grep -q "provider register --namespace Microsoft.KubernetesConfiguration" "$WORK_DIR/az.log"' "$(cat "$WORK_DIR/az.log")"
+check 'registers and waits for the hosted system and default domain preview features' \
+  '[[ "$(grep -oE "^feature (register|show) --name [A-Za-z-]+" "$WORK_DIR/az.log" | sort | tr "\n" ",")" == "feature register --name AKS-AutomaticHostedSystemProfilePreview,feature register --name DefaultDomainPreview,feature show --name AKS-AutomaticHostedSystemProfilePreview,feature show --name DefaultDomainPreview," ]]' "$(cat "$WORK_DIR/az.log")"
 
 # --- bootstrap: Key Vault secrets --------------------------------------------
 reset_logs
@@ -365,6 +395,70 @@ reset_logs
 out="$(STUB_CLIENT_SECRET='' run $BOOTSTRAP 'PLATFORM_KEYVAULT_NAME=kv1 AKS_CLUSTER_NAME=c PORTAL_APP_NAME=c-portal; ensure_portal_app')"
 check 'fails instead of storing an empty client secret' \
   '[[ $? -ne 0 ]] && ! grep -q "^portal-client-secret=" "$WORK_DIR/kv-writes" 2>/dev/null' "$out"
+
+# --- teardown ----------------------------------------------------------------
+TEARDOWN=teardown-aks-platform.sh
+WS=/subscriptions/sub1/resourceGroups/DefaultResourceGroup-westus3/providers/microsoft.monitor/accounts/DefaultAzureMonitorWorkspace-westus3
+down='RESOURCE_GROUP=rg AKS_CLUSTER_NAME=c LOCATION=westus3 PORTAL_APP_NAME=c-portal ASSUME_YES=true; main && echo down-ok'
+# step <pattern>: line number of the first call matching pattern (0 if none).
+step() { grep -n -m1 -E -- "$1" "$WORK_DIR/calls.log" | cut -d: -f1 || true; }
+
+reset_logs
+out="$(printf 'wrong\n' | run $TEARDOWN 'RESOURCE_GROUP=rg; main')"
+# shellcheck disable=SC2034 # read inside check's eval
+rc=$?
+check 'refuses to delete anything without the typed confirmation' \
+  '[[ $rc -ne 0 && "$out" == *"Not confirmed"* ]] && ! grep -q -E "delete|purge|patch" "$WORK_DIR/calls.log"' "$out$(cat "$WORK_DIR/calls.log")"
+reset_logs
+out="$(printf 'rg\n' | run $TEARDOWN 'RESOURCE_GROUP=rg AKS_CLUSTER_NAME=c PORTAL_APP_NAME=c-portal; main && echo down-ok')"
+check 'proceeds when the resource group name is typed' '[[ "$out" == *down-ok ]]' "$out"
+
+reset_logs
+out="$(STUB_APP_IDS=app1 STUB_KEYVAULT=kv1 run $TEARDOWN "$down")"
+order=""
+for pattern in "^kubectl -n cluster-config patch .*suspend" "^kubectl delete managed --all --all-namespaces" "^az role assignment delete --ids /ra/1 /ra/2" \
+  "^az policy assignment delete --name idp-mcsb-v2" "^az ad app delete --id app1" "deletedItems/app-object-id" "^az group delete --name rg --yes" \
+  "^az keyvault purge --name kv1" "^az resource delete --ids $WS" "^az group delete --name DefaultResourceGroup-westus3" "^kubectl config delete-context c"; do
+  order+="$(step "$pattern") "
+done
+# shellcheck disable=SC2034 # read inside check's eval
+sorted="$(tr ' ' '\n' <<<"$order" | grep . | sort -n | tr '\n' ' ')"
+check 'tears down in a safe order: Flux suspended, managed resources, role assignments, then the group, vault purge, workspace' \
+  '[[ "$out" == *down-ok && "$order" != *"  "* && "$order" != " "* && "$order" == "$sorted" ]]' "order: $order"$'"'"'\n'"'"'"$(cat "$WORK_DIR/calls.log")"
+check 'removes role assignments at every scope, not just inside the resource group' \
+  'grep -q "^role assignment list --all --assignee-object-id principal-oid" "$WORK_DIR/az.log"' "$(cat "$WORK_DIR/az.log")"
+
+reset_logs
+out="$(STUB_REMAINING_MANAGED='account.storage.azure.m.upbound.io/team-a/sa1' run $TEARDOWN "$down")"
+check 'stops before deleting the cluster while Crossplane still holds Azure resources' \
+  '[[ "$out" != *down-ok && "$out" == *team-a/sa1* && "$out" == *SKIP_MANAGED_RESOURCE_CLEANUP* ]] && ! grep -q -e "group delete" -e "role assignment delete" "$WORK_DIR/az.log"' "$out"
+reset_logs
+out="$(STUB_REMAINING_MANAGED='account.storage.azure.m.upbound.io/team-a/sa1' SKIP_MANAGED_RESOURCE_CLEANUP=true run $TEARDOWN "$down")"
+check 'SKIP_MANAGED_RESOURCE_CLEANUP leaves Crossplane alone and continues' \
+  '[[ "$out" == *down-ok ]] && ! grep -q "delete managed" "$WORK_DIR/kubectl.log" && grep -q "group delete --name rg" "$WORK_DIR/az.log"' "$out"
+
+reset_logs
+out="$(STUB_ALL_DCRS=/other/dcr run $TEARDOWN "$down")"
+check 'keeps the default Monitor workspace while another data collection rule uses it' \
+  '[[ "$out" == *down-ok && "$out" == *"still used by /other/dcr"* ]] && ! grep -q "resource delete" "$WORK_DIR/az.log"' "$out"
+reset_logs
+out="$(STUB_WORKSPACE=/subscriptions/sub1/resourceGroups/rg-mon/providers/microsoft.monitor/accounts/team-workspace run $TEARDOWN "$down")"
+check 'never deletes a Monitor workspace it did not get from AKS defaults' '! grep -q "resource delete" "$WORK_DIR/az.log"' "$(cat "$WORK_DIR/az.log")"
+reset_logs
+STUB_GROUP_RESOURCES=3 run $TEARDOWN "$down" >/dev/null
+check 'keeps the default resource group when other resources are in it' \
+  'grep -q "resource delete" "$WORK_DIR/az.log" && ! grep -q "group delete --name DefaultResourceGroup" "$WORK_DIR/az.log"' "$(cat "$WORK_DIR/az.log")"
+
+reset_logs
+out="$(STUB_KEYVAULT=kv1 STUB_PURGE_PROTECTION=true run $TEARDOWN "$down")"
+check 'does not try to purge a vault with purge protection' '[[ "$out" == *"cannot be purged"* ]] && ! grep -q "keyvault purge" "$WORK_DIR/az.log"' "$out"
+
+reset_logs
+out="$(STUB_CLUSTER=no STUB_GROUP_EXISTS=false STUB_ROLE_IDS='' STUB_POLICY_ASSIGNED=no STUB_APP_IDS='' run $TEARDOWN "$down")"
+check 'a rerun after a full teardown deletes nothing and succeeds' \
+  '[[ "$out" == *down-ok ]] && ! grep -q -E "^az .*(delete|purge)|^kubectl (delete managed|.*patch)" "$WORK_DIR/calls.log"' "$out$(cat "$WORK_DIR/calls.log")"
+check 'npm run azure:down runs the teardown script' \
+  'grep -q "\"azure:down\": \"bash scripts/azure/teardown-aks-platform.sh\"" "$AZURE_DIR/../../package.json"' ""
 
 # --- hygiene -----------------------------------------------------------------
 check 'no temp files with secrets left behind' '[[ -z "$(ls -A "$WORK_DIR/tmp")" ]]' "$(ls -la "$WORK_DIR/tmp")"

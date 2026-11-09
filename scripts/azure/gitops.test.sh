@@ -37,9 +37,7 @@ declare -A sample=(
   [IDP_WEB_CLIENT_ID]=web-client-1
   [IMAGE_REF]=acr1.azurecr.io/idp-web:20260101000000
   [WORKLOAD_ARCH]=amd64
-  [DNS_LABEL]=idp-aks-auto-1234abcd
-  [INGRESS_HOST]=idp-aks-auto-1234abcd.westus3.cloudapp.azure.com
-  [ACME_SERVER]=https://acme-v02.api.letsencrypt.org/directory
+  [INGRESS_HOST]=idp.0123456789abcdef01234567.westus3.aksapp.io
 )
 
 # Keys the deploy script actually writes (--from-literal=KEY=...).
@@ -49,7 +47,7 @@ check 'the test covers exactly the settings the deploy script writes' \
 
 names="$(yq -N 'select(.kind == "Kustomization") | .metadata.name' "$FLUX_OBJECTS")"
 check 'declares the platform Kustomizations' \
-  '[[ "$(sort <<<"$names" | tr "\n" " ")" == "cert-manager crossplane crossplane-configs crossplane-providers idp " ]]' "$names"
+  '[[ "$(sort <<<"$names" | tr "\n" " ")" == "crossplane crossplane-configs crossplane-providers idp " ]]' "$names"
 
 SUBST_FILE="$WORK_DIR/substitute.yaml"
 echo '{}' > "$SUBST_FILE"
@@ -92,7 +90,7 @@ done
 flux_objects="$(cat "$FLUX_OBJECTS"; echo ---; for name in $names; do printf '%s\n---\n' "${out[$name]}"; done)"
 bad_ns="$(yq -N 'select(.apiVersion == "*toolkit.fluxcd.io*" and .metadata.namespace != "cluster-config") | .kind + "/" + .metadata.name' <<<"$flux_objects")"
 flux_count="$(yq -N 'select(.apiVersion == "*toolkit.fluxcd.io*") | .kind' <<<"$flux_objects" | grep -c .)"
-check 'every Flux object lives in cluster-config' '[[ "$flux_count" -ge 9 && -z "$bad_ns" ]]' "$flux_count objects; outside cluster-config: $bad_ns"
+check 'every Flux object lives in cluster-config' '[[ "$flux_count" -ge 6 && -z "$bad_ns" ]]' "$flux_count objects; outside cluster-config: $bad_ns"
 bad_refs="$(yq -N 'select(.apiVersion == "*toolkit.fluxcd.io*") | [.spec.sourceRef, .spec.chartRef, .spec.chart.spec.sourceRef] | .[] | select(. != null and .namespace != null and .namespace != "cluster-config") | .name' <<<"$flux_objects")"
 check 'no Flux object references a source in another namespace' '[[ -z "$bad_refs" ]]' "$bad_refs"
 config_name="$(sed -nE 's/^FLUX_CONFIG_NAME="\$\{FLUX_CONFIG_NAME:-(.*)\}"$/\1/p' "$DEPLOY")"
@@ -103,8 +101,8 @@ check 'the deploy script points the Flux configuration at this directory' \
   'grep -q "path=./platform/gitops/clusters/idp-aks-auto" "$DEPLOY"' ""
 
 dep() { NAME="$1" yq -N 'select(.kind == "Kustomization" and .metadata.name == strenv(NAME)) | .spec.dependsOn[].name' "$FLUX_OBJECTS" | tr '\n' ' '; }
-check 'providers wait for Crossplane, configs for providers, the app for cert-manager' \
-  '[[ "$(dep crossplane-providers)" == "crossplane " && "$(dep crossplane-configs)" == "crossplane-providers " && "$(dep idp)" == "cert-manager " ]]' \
+check 'providers wait for Crossplane, configs for providers; the app waits for nothing' \
+  '[[ "$(dep crossplane-providers)" == "crossplane " && "$(dep crossplane-configs)" == "crossplane-providers " && -z "$(dep idp)" ]]' \
   "$(for n in $names; do echo "$n: $(dep "$n")"; done)"
 
 # --- Crossplane ---------------------------------------------------------------
@@ -138,16 +136,6 @@ check 'ProviderConfigs authenticate with the Crossplane identity in this tenant 
 check 'the smoke-test ResourceGroup is namespaced and uses the region' \
   '[[ "$(yq -N "select(.kind == \"ResourceGroup\") | .metadata.namespace + \"/\" + .spec.forProvider.location" <<<"$cfg")" == default/westus3 ]]' "$cfg"
 
-# --- cert-manager -------------------------------------------------------------
-cm="${out[cert-manager]}"
-check 'cert-manager chart is pinned' \
-  '[[ "$(yq -N "select(.kind == \"OCIRepository\") | .spec.url + \":\" + .spec.ref.tag" <<<"$cm")" == oci://quay.io/jetstack/charts/cert-manager:v1.21.3 ]]' "$cm"
-# AKS Automatic denies writes to kube-system, the chart's default for these Roles.
-check 'cert-manager leader election stays in its own namespace, out of kube-system' \
-  '[[ "$(hr cert-manager .spec.values.global.leaderElection.namespace "$cm")" == cert-manager && "$(hr cert-manager .spec.targetNamespace "$cm")" == cert-manager ]]' "$cm"
-check 'cert-manager may attach ACME solver routes to the Gateway' \
-  '[[ "$(hr cert-manager .spec.values.config.gatewayAPI.enabled "$cm")" == true ]]' "$cm"
-
 # --- IDP app ------------------------------------------------------------------
 idp="${out[idp]}"
 sel() { yq -N "select(.kind == \"$1\" and .metadata.name == \"$2\") | $3" <<<"$idp"; }
@@ -155,15 +143,14 @@ check 'the app runs the image and architecture the script built' \
   '[[ "$(sel Deployment idp-web ".spec.template.spec.containers[0].image")" == acr1.azurecr.io/idp-web:20260101000000 && "$(sel Deployment idp-web ".spec.template.spec.nodeSelector[\"kubernetes.io/arch\"]")" == amd64 ]]' "$idp"
 check 'the app service account uses the portal identity' \
   '[[ "$(sel ServiceAccount idp-web ".metadata.annotations[\"azure.workload.identity/client-id\"]")" == web-client-1 ]]' "$idp"
-check 'the Gateway serves the host with the cert-manager certificate and the DNS label' \
-  '[[ "$(sel Gateway idp-web ".spec.listeners[] | select(.name == \"https\") | .hostname + \" \" + .tls.certificateRefs[0].name")" == "idp-aks-auto-1234abcd.westus3.cloudapp.azure.com idp-web-tls" && "$(sel Gateway idp-web ".spec.infrastructure.annotations[\"service.beta.kubernetes.io/azure-dns-label-name\"]")" == idp-aks-auto-1234abcd ]]' "$idp"
-check 'no Key Vault TLS remains (no listener options, no Gateway TLS identity)' \
-  '[[ "$idp" != *tls-cert-keyvault-uri* && "$idp" != *idp-gateway-tls* ]]' "$idp"
-check 'Let'"'"'s Encrypt issues for the host through the Gateway' \
-  '[[ "$(sel ClusterIssuer letsencrypt ".spec.acme.server")" == https://acme-v02.api.letsencrypt.org/directory && "$(sel Certificate idp-web-tls ".spec.dnsNames[]")" == idp-aks-auto-1234abcd.westus3.cloudapp.azure.com && "$(sel ClusterIssuer letsencrypt ".spec.acme.solvers[0].http01.gatewayHTTPRoute.parentRefs[0].name")" == idp-web ]]' "$idp"
+check 'the Gateway serves the host with the managed default-domain certificate' \
+  '[[ "$(sel Gateway idp-web ".spec.listeners[] | select(.name == \"https\") | .hostname + \" \" + .tls.certificateRefs[0].name")" == "idp.0123456789abcdef01234567.westus3.aksapp.io idp-web-tls" && "$(sel DefaultDomainCertificate idp-web-tls ".metadata.namespace + \"/\" + .spec.target.secret")" == idp-system/idp-web-tls ]]' "$idp"
+check 'no Key Vault TLS, cert-manager or Azure DNS label remains' \
+  '[[ "$idp" != *tls-cert-keyvault-uri* && "$idp" != *idp-gateway-tls* && "$idp" != *cert-manager.io* && "$idp" != *azure-dns-label-name* ]]' "$idp"
 check 'both routes answer only for the host' \
-  '[[ "$(yq -N "select(.kind == \"HTTPRoute\") | .spec.hostnames[]" <<<"$idp" | sort -u)" == idp-aks-auto-1234abcd.westus3.cloudapp.azure.com ]]' "$idp"
-check 'the app waits for its certificate and rollout' \
-  '[[ "$(yq -N "select(.kind == \"Kustomization\" and .metadata.name == \"idp\") | .spec.wait" "$FLUX_OBJECTS")" == true ]]' ""
+  '[[ "$(yq -N "select(.kind == \"HTTPRoute\") | .spec.hostnames[]" <<<"$idp" | sort -u)" == idp.0123456789abcdef01234567.westus3.aksapp.io ]]' "$idp"
+expr="$(yq -N 'select(.kind == "Kustomization" and .metadata.name == "idp") | .spec.healthCheckExprs[] | select(.kind == "DefaultDomainCertificate") | .current' "$FLUX_OBJECTS")"
+check 'the app waits for its rollout and for the certificate to be Available' \
+  '[[ "$(yq -N "select(.kind == \"Kustomization\" and .metadata.name == \"idp\") | .spec.wait" "$FLUX_OBJECTS")" == true && "$expr" == *"'"'"'Available'"'"'"* && "$expr" != *".all("* ]]' "$expr"
 
 exit "$failures"

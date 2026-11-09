@@ -68,15 +68,15 @@ After the cluster exists, deploy with:
 bash scripts/azure/deploy-platform-to-aks.sh
 ```
 
-Everything inside the cluster is deployed by **Flux** (the AKS GitOps extension, `microsoft.flux`) from this repository: Crossplane and cert-manager as `HelmRelease`s, the Crossplane providers and configs, and the portal. Flux syncs the branch you have checked out, as pushed to `origin`, so commit and push before deploying; the script stops if your branch has unpushed commits or uncommitted `platform/` changes. Set `GITOPS_BRANCH=main` to track another pushed branch.
+Everything inside the cluster is deployed by **Flux** (the AKS GitOps extension, `microsoft.flux`) from this repository: Crossplane as a `HelmRelease`, the Crossplane providers and configs, and the portal. Flux syncs the branch you have checked out, as pushed to `origin`, so commit and push before deploying; the script stops if your branch has unpushed commits or uncommitted `platform/` changes. Set `GITOPS_BRANCH=main` to track another pushed branch.
 
-The portal is always published on HTTPS (Entra ID only accepts `https` redirect URIs). With no inputs it gives the Gateway's public IP an Azure DNS label (`<label>.<region>.cloudapp.azure.com`) and cert-manager issues a trusted Let's Encrypt certificate for it. For your own domain, set `INGRESS_HOST` and point its DNS at the Gateway.
+The portal is always published on HTTPS (Entra ID only accepts `https` redirect URIs), at `idp.<id>.<region>.aksapp.io` under the cluster's [app routing default domain](https://learn.microsoft.com/azure/aks/app-routing-default-domain): AKS owns that domain, its trusted wildcard certificate and its DNS records. The default domain is an AKS preview feature (no SLA); the bootstrap registers its `DefaultDomainPreview` flag.
 
 What the deploy script does:
 
 - Reuses an existing ACR from the target resource group when one already exists, otherwise creates a new Basic ACR and attaches it to the AKS cluster.
 - Builds the Next.js app as a standalone container image and pushes it to ACR.
-- Enables the managed Gateway API and the application routing Gateway implementation (`approuting-istio`) if missing.
+- Enables the managed Gateway API, the application routing Gateway implementation (`approuting-istio`) and the app routing add-on with its default domain (no NGINX) if missing.
 - Registers `https://<host>/api/auth/callback/azure-ad` on the portal app registration.
 - Creates the app's secret from Key Vault and writes the per-cluster values Flux substitutes (Azure IDs, hostname, image) to the `idp-platform-settings` ConfigMap.
 - Creates (or repoints) the Flux configuration `idp-platform`, then waits until every Flux `Kustomization` is ready and the new image is rolled out.
@@ -84,8 +84,7 @@ What the deploy script does:
 What Flux deploys (versions pinned in Git; see [platform/kubernetes/idp/README.md](platform/kubernetes/idp/README.md#gitops)):
 
 - Crossplane 2.4.3 into `crossplane-system`, the Azure provider packages v2.8.0 (resource groups, networking, storage, PostgreSQL, AKS), workload identity `ProviderConfig`/`ClusterProviderConfig` objects and a smoke-test `ResourceGroup`.
-- cert-manager v1.21.3, a Let's Encrypt `ClusterIssuer` and the Gateway's certificate.
-- The portal in `idp-system` and its TLS `Gateway` with an HTTP-to-HTTPS redirect.
+- The portal in `idp-system`, its TLS `Gateway` with an HTTP-to-HTTPS redirect, and a `DefaultDomainCertificate` that has AKS put the managed certificate in the Gateway's Secret.
 
 Important deploy behavior:
 
@@ -101,6 +100,24 @@ Starter assumptions:
 
 - The app's Kubernetes RBAC is read-only except for create, delete, and patch on `storage.azure.upbound.io` `accounts`. The API additionally rejects any resource type outside its allowlist (`src/lib/crossplane/allowedResources.ts`).
 - Every API route requires a signed-in session, and only users assigned to the portal's enterprise application can sign in.
+
+## Teardown
+
+```bash
+npm run azure:down            # asks you to type the resource group name
+npm run azure:down -- --yes   # no prompt
+```
+
+`scripts/azure/teardown-aks-platform.sh` removes everything `azure:up` creates, in an order that leaves nothing behind:
+
+1. Suspends Flux, then deletes every Crossplane managed resource so the providers delete the Azure resources they created (portal-created storage accounts and the smoke-test resource group included). It stops if any remain; set `SKIP_MANAGED_RESOURCE_CLEANUP=true` only when the cluster is broken and you have handled them yourself.
+2. Deletes every role assignment of the Crossplane and portal identities, at any scope, before the identities themselves; otherwise subscription-scope assignments stay behind as orphans.
+3. Deletes the `idp-mcsb-v2` policy assignment and the portal's Entra app registration (purged, not just soft-deleted).
+4. Deletes the resource group (cluster, node resource group, registry, storage, Key Vault, identities), then purges the Key Vault unless purge protection is on.
+5. Deletes the default Azure Monitor workspace AKS created for managed Prometheus, and its `DefaultResourceGroup-*` when empty, but only when no other data collection rule uses it. Azure removes its managed `MA_*` resource group with it.
+6. Removes the cluster's kubeconfig entries.
+
+A rerun after a full teardown changes nothing. It uses the same `RESOURCE_GROUP`, `AKS_CLUSTER_NAME`, `LOCATION` and identity/app name variables as the bootstrap.
 
 ## Storage Account Dev Workflow
 

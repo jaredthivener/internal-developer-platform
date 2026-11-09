@@ -1,7 +1,7 @@
 # Public entry point: the AKS application routing Gateway API implementation
-# (GatewayClass approuting-istio). The load balancer's public IP gets an Azure
-# DNS label, so the default hostname <label>.<region>.cloudapp.azure.com stays
-# the same even if the IP changes. TLS uses the cert-manager certificate from
+# (GatewayClass approuting-istio). INGRESS_HOST is a host under the cluster's
+# app routing default domain; the managed external-dns publishes its A record
+# from the HTTPRoutes, and TLS uses the managed certificate from
 # certificate.yaml.
 apiVersion: gateway.networking.k8s.io/v1
 kind: Gateway
@@ -10,9 +10,6 @@ metadata:
   namespace: idp-system
 spec:
   gatewayClassName: approuting-istio
-  infrastructure:
-    annotations:
-      service.beta.kubernetes.io/azure-dns-label-name: ${DNS_LABEL}
   listeners:
     - name: http
       port: 80
