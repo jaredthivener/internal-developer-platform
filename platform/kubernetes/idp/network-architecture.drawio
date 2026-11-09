@@ -1,0 +1,167 @@
+<mxfile host="Electron">
+  <diagram id="net" name="Network architecture">
+    <mxGraphModel dx="-989" dy="-120" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="0" page="0" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0" adaptiveColors="auto">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" parent="1" style="text;html=1;fontSize=18;align=left;verticalAlign=middle;" value="&lt;b&gt;IDP network architecture&lt;/b&gt; (AKS Automatic, app routing default domain)" vertex="1">
+          <mxGeometry height="30" width="900" x="160" y="-200" as="geometry" />
+        </mxCell>
+        <mxCell id="dns" parent="1" style="image;aspect=fixed;html=1;points=[];fontSize=11;image=img/lib/azure2/networking/DNS_Zones.svg;labelPosition=right;verticalLabelPosition=middle;align=left;verticalAlign=middle;spacingLeft=4;" value="&lt;b&gt;aksapp.io DNS zone&lt;/b&gt; (AKS-managed)&lt;br&gt;idp.&amp;lt;id&amp;gt;.westus3.aksapp.io → Gateway public IP" vertex="1">
+          <mxGeometry height="48" width="48" x="40" y="-140" as="geometry" />
+        </mxCell>
+        <mxCell id="browser" parent="1" style="image;aspect=fixed;html=1;points=[];fontSize=11;image=img/lib/azure2/general/Browser.svg;verticalLabelPosition=bottom;verticalAlign=top;align=center;" value="&lt;b&gt;Browser&lt;/b&gt;" vertex="1">
+          <mxGeometry height="40" width="50" x="40" y="234" as="geometry" />
+        </mxCell>
+        <mxCell id="github" parent="1" style="image;aspect=fixed;html=1;points=[];fontSize=11;image=img/lib/azure2/general/Globe.svg;verticalLabelPosition=bottom;verticalAlign=top;align=center;" value="&lt;b&gt;GitHub&lt;/b&gt;&lt;br&gt;(Flux source)" vertex="1">
+          <mxGeometry height="48" width="48" x="1770" y="-120" as="geometry" />
+        </mxCell>
+        <mxCell id="entra" parent="1" style="image;aspect=fixed;html=1;points=[];fontSize=11;image=img/lib/azure2/identity/Azure_Active_Directory.svg;verticalLabelPosition=bottom;verticalAlign=top;align=center;" value="&lt;b&gt;Microsoft Entra ID&lt;/b&gt;&lt;br&gt;browser sign-in redirect&lt;br&gt;+ app token exchange" vertex="1">
+          <mxGeometry height="48" width="48" x="1770" y="760" as="geometry" />
+        </mxCell>
+        <mxCell id="legend" parent="1" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=4;fontSize=11;fillColor=#f5f5f5;strokeColor=#999999;" value="&lt;b&gt;Legend&lt;/b&gt;&lt;br&gt;Thick: user request path&lt;br&gt;Dashed: control / configuration&lt;br&gt;&lt;font color=&quot;#D9001B&quot;&gt;Red: unencrypted hop&lt;/font&gt;&lt;br&gt;Thin solid: outbound calls&lt;br&gt;All egress leaves through the NAT gateway" vertex="1">
+          <mxGeometry height="130" width="190" x="1700" y="900" as="geometry" />
+        </mxCell>
+        <mxCell id="sub" parent="1" style="swimlane;startSize=24;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;swimlaneFillColor=#F4F8FD;" value="Azure subscription · westus3" vertex="1">
+          <mxGeometry height="1000" width="1500" x="160" as="geometry" />
+        </mxCell>
+        <mxCell id="lb" parent="sub" style="image;aspect=fixed;html=1;points=[];fontSize=11;image=img/lib/azure2/networking/Load_Balancers.svg;verticalLabelPosition=bottom;verticalAlign=top;align=center;" value="&lt;b&gt;Azure Load Balancer&lt;/b&gt;&lt;br&gt;public IP · :80 / :443" vertex="1">
+          <mxGeometry height="48" width="48" x="50" y="230" as="geometry" />
+        </mxCell>
+        <mxCell id="nat" parent="sub" style="image;aspect=fixed;html=1;points=[];fontSize=11;image=img/lib/azure2/networking/NAT.svg;verticalLabelPosition=bottom;verticalAlign=top;align=center;" value="&lt;b&gt;NAT gateway&lt;/b&gt;&lt;br&gt;(AKS-managed, all egress)" vertex="1">
+          <mxGeometry height="48" width="48" x="1200" y="440" as="geometry" />
+        </mxCell>
+        <mxCell id="rg" parent="sub" style="image;aspect=fixed;html=1;points=[];fontSize=11;image=img/lib/azure2/management_governance/Resource_Graph_Explorer.svg;verticalLabelPosition=bottom;verticalAlign=top;align=center;" value="&lt;b&gt;ARM · Resource Graph&lt;/b&gt;&lt;br&gt;(live catalog, Crossplane)" vertex="1">
+          <mxGeometry height="48" width="48" x="1370" y="90" as="geometry" />
+        </mxCell>
+        <mxCell id="cost" parent="sub" style="image;aspect=fixed;html=1;points=[];fontSize=11;image=img/lib/azure2/general/Cost_Management.svg;verticalLabelPosition=bottom;verticalAlign=top;align=center;" value="&lt;b&gt;Cost Management&lt;/b&gt;" vertex="1">
+          <mxGeometry height="48" width="48" x="1370" y="280" as="geometry" />
+        </mxCell>
+        <mxCell id="stor" parent="sub" style="image;aspect=fixed;html=1;points=[];fontSize=11;image=img/lib/azure2/storage/Storage_Accounts.svg;verticalLabelPosition=bottom;verticalAlign=top;align=center;" value="&lt;b&gt;Storage account&lt;/b&gt;&lt;br&gt;(desired state)" vertex="1">
+          <mxGeometry height="48" width="48" x="1370" y="470" as="geometry" />
+        </mxCell>
+        <mxCell id="acr" parent="sub" style="image;aspect=fixed;html=1;points=[];fontSize=11;image=img/lib/azure2/containers/Container_Registries.svg;verticalLabelPosition=bottom;verticalAlign=top;align=center;" value="&lt;b&gt;Container Registry&lt;/b&gt;&lt;br&gt;(image pulls)" vertex="1">
+          <mxGeometry height="48" width="48" x="1370" y="660" as="geometry" />
+        </mxCell>
+        <mxCell id="aks" parent="sub" style="swimlane;startSize=24;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;swimlaneFillColor=#FBF8FC;" value="AKS Automatic cluster idp-aks-auto · Kubernetes 1.37 · Azure CNI Overlay + Cilium" vertex="1">
+          <mxGeometry height="930" width="980" x="170" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="idp" parent="aks" style="swimlane;startSize=24;html=1;fillColor=#fff2cc;strokeColor=#d6b656;swimlaneFillColor=#FFFDF5;" value="namespace idp-system" vertex="1">
+          <mxGeometry height="520" width="660" x="20" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="gw" parent="idp" style="aspect=fixed;sketch=0;html=1;dashed=0;whitespace=wrap;fillColor=#2875E2;strokeColor=#ffffff;points=[[0.005,0.63,0],[0.1,0.2,0],[0.9,0.2,0],[0.5,0,0],[0.995,0.63,0],[0.72,0.99,0],[0.5,1,0],[0.28,0.99,0]];shape=mxgraph.kubernetes.icon2;fontSize=11;prIcon=pod;verticalLabelPosition=top;verticalAlign=bottom;align=center;" value="&lt;b&gt;Gateway idp-web&lt;/b&gt; (approuting-istio)&lt;br&gt;Envoy proxy pods, HPA 2–5&lt;br&gt;:80 → 301 redirect to https&lt;br&gt;:443 → TLS &lt;b&gt;Terminate&lt;/b&gt;" vertex="1">
+          <mxGeometry height="48" width="50" x="110" y="150" as="geometry" />
+        </mxCell>
+        <mxCell id="svc" parent="idp" style="aspect=fixed;sketch=0;html=1;dashed=0;whitespace=wrap;fillColor=#2875E2;strokeColor=#ffffff;points=[[0.005,0.63,0],[0.1,0.2,0],[0.9,0.2,0],[0.5,0,0],[0.995,0.63,0],[0.72,0.99,0],[0.5,1,0],[0.28,0.99,0]];shape=mxgraph.kubernetes.icon2;fontSize=11;prIcon=svc;verticalLabelPosition=top;verticalAlign=bottom;align=center;" value="&lt;b&gt;Service idp-web&lt;/b&gt;&lt;br&gt;ClusterIP :80" vertex="1">
+          <mxGeometry height="48" width="50" x="340" y="150" as="geometry" />
+        </mxCell>
+        <mxCell id="pods" parent="idp" style="aspect=fixed;sketch=0;html=1;dashed=0;whitespace=wrap;fillColor=#2875E2;strokeColor=#ffffff;points=[[0.005,0.63,0],[0.1,0.2,0],[0.9,0.2,0],[0.5,0,0],[0.995,0.63,0],[0.72,0.99,0],[0.5,1,0],[0.28,0.99,0]];shape=mxgraph.kubernetes.icon2;fontSize=11;prIcon=pod;verticalLabelPosition=top;verticalAlign=bottom;align=center;" value="&lt;b&gt;idp-web pods&lt;/b&gt;&lt;br&gt;node server.js :3000&lt;br&gt;workload identity" vertex="1">
+          <mxGeometry height="48" width="50" x="530" y="150" as="geometry" />
+        </mxCell>
+        <mxCell id="secret" parent="idp" style="aspect=fixed;sketch=0;html=1;dashed=0;whitespace=wrap;fillColor=#2875E2;strokeColor=#ffffff;points=[[0.005,0.63,0],[0.1,0.2,0],[0.9,0.2,0],[0.5,0,0],[0.995,0.63,0],[0.72,0.99,0],[0.5,1,0],[0.28,0.99,0]];shape=mxgraph.kubernetes.icon2;fontSize=11;prIcon=secret;labelPosition=right;verticalLabelPosition=middle;align=left;verticalAlign=middle;spacingLeft=4;" value="&lt;b&gt;Secret idp-web-tls&lt;/b&gt;&lt;br&gt;wildcard cert&lt;br&gt;*.&amp;lt;id&amp;gt;.westus3.aksapp.io" vertex="1">
+          <mxGeometry height="48" width="50" x="230" y="380" as="geometry" />
+        </mxCell>
+        <mxCell id="ddc" parent="idp" style="aspect=fixed;sketch=0;html=1;dashed=0;whitespace=wrap;fillColor=#2875E2;strokeColor=#ffffff;points=[[0.005,0.63,0],[0.1,0.2,0],[0.9,0.2,0],[0.5,0,0],[0.995,0.63,0],[0.72,0.99,0],[0.5,1,0],[0.28,0.99,0]];shape=mxgraph.kubernetes.icon2;fontSize=11;prIcon=crd;labelPosition=right;verticalLabelPosition=middle;align=left;verticalAlign=middle;spacingLeft=4;" value="&lt;b&gt;DefaultDomainCertificate&lt;/b&gt;&lt;br&gt;idp-web-tls" vertex="1">
+          <mxGeometry height="48" width="50" x="440" y="380" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" edge="1" parent="idp" source="gw" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=10;labelBackgroundColor=default;strokeWidth=2;strokeColor=#D9001B;fontColor=#D9001B;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" target="svc" value="④ plain HTTP&lt;br&gt;(unencrypted)">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" edge="1" parent="idp" source="svc" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=10;labelBackgroundColor=default;strokeWidth=2;strokeColor=#D9001B;fontColor=#D9001B;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" target="pods" value=":3000">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e6" edge="1" parent="idp" source="secret" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=10;labelBackgroundColor=default;dashed=1;strokeColor=#888888;exitX=0.5;exitY=0;entryX=0.8;entryY=1;" target="gw" value="TLS cert">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ars" parent="aks" style="swimlane;startSize=24;html=1;fillColor=#f5f5f5;strokeColor=#999999;swimlaneFillColor=#FCFCFC;" value="namespace app-routing-system (AKS-managed)" vertex="1">
+          <mxGeometry height="180" width="380" x="20" y="620" as="geometry" />
+        </mxCell>
+        <mxCell id="extdns" parent="ars" style="aspect=fixed;sketch=0;html=1;dashed=0;whitespace=wrap;fillColor=#2875E2;strokeColor=#ffffff;points=[[0.005,0.63,0],[0.1,0.2,0],[0.9,0.2,0],[0.5,0,0],[0.995,0.63,0],[0.72,0.99,0],[0.5,1,0],[0.28,0.99,0]];shape=mxgraph.kubernetes.icon2;fontSize=11;prIcon=deploy;verticalLabelPosition=bottom;verticalAlign=top;align=center;" value="&lt;b&gt;external-dns&lt;/b&gt;&lt;br&gt;(managed)" vertex="1">
+          <mxGeometry height="48" width="50" x="60" y="50" as="geometry" />
+        </mxCell>
+        <mxCell id="operator" parent="ars" style="aspect=fixed;sketch=0;html=1;dashed=0;whitespace=wrap;fillColor=#2875E2;strokeColor=#ffffff;points=[[0.005,0.63,0],[0.1,0.2,0],[0.9,0.2,0],[0.5,0,0],[0.995,0.63,0],[0.72,0.99,0],[0.5,1,0],[0.28,0.99,0]];shape=mxgraph.kubernetes.icon2;fontSize=11;prIcon=deploy;verticalLabelPosition=bottom;verticalAlign=top;align=center;" value="&lt;b&gt;app routing operator&lt;/b&gt;&lt;br&gt;issues + renews the cert" vertex="1">
+          <mxGeometry height="48" width="50" x="230" y="50" as="geometry" />
+        </mxCell>
+        <mxCell id="ais" parent="aks" style="swimlane;startSize=24;html=1;fillColor=#f5f5f5;strokeColor=#999999;swimlaneFillColor=#FCFCFC;" value="namespace aks-istio-system" vertex="1">
+          <mxGeometry height="180" width="260" x="420" y="620" as="geometry" />
+        </mxCell>
+        <mxCell id="istiod" parent="ais" style="aspect=fixed;sketch=0;html=1;dashed=0;whitespace=wrap;fillColor=#2875E2;strokeColor=#ffffff;points=[[0.005,0.63,0],[0.1,0.2,0],[0.9,0.2,0],[0.5,0,0],[0.995,0.63,0],[0.72,0.99,0],[0.5,1,0],[0.28,0.99,0]];shape=mxgraph.kubernetes.icon2;fontSize=11;prIcon=deploy;verticalLabelPosition=bottom;verticalAlign=top;align=center;" value="&lt;b&gt;istiod&lt;/b&gt;&lt;br&gt;Gateway controller only&lt;br&gt;(no mesh, no sidecars)" vertex="1">
+          <mxGeometry height="48" width="50" x="105" y="50" as="geometry" />
+        </mxCell>
+        <mxCell id="cc" parent="aks" style="swimlane;startSize=24;html=1;fillColor=#d5e8d4;strokeColor=#82b366;swimlaneFillColor=#F7FBF6;" value="namespace cluster-config" vertex="1">
+          <mxGeometry height="170" width="240" x="720" y="260" as="geometry" />
+        </mxCell>
+        <mxCell id="flux" parent="cc" style="aspect=fixed;sketch=0;html=1;dashed=0;whitespace=wrap;fillColor=#2875E2;strokeColor=#ffffff;points=[[0.005,0.63,0],[0.1,0.2,0],[0.9,0.2,0],[0.5,0,0],[0.995,0.63,0],[0.72,0.99,0],[0.5,1,0],[0.28,0.99,0]];shape=mxgraph.kubernetes.icon2;fontSize=11;prIcon=deploy;verticalLabelPosition=bottom;verticalAlign=top;align=center;" value="&lt;b&gt;Flux&lt;/b&gt; (microsoft.flux)&lt;br&gt;applies manifests via the API" vertex="1">
+          <mxGeometry height="48" width="50" x="95" y="45" as="geometry" />
+        </mxCell>
+        <mxCell id="xps" parent="aks" style="swimlane;startSize=24;html=1;fillColor=#d5e8d4;strokeColor=#82b366;swimlaneFillColor=#F7FBF6;" value="namespace crossplane-system" vertex="1">
+          <mxGeometry height="170" width="240" x="720" y="460" as="geometry" />
+        </mxCell>
+        <mxCell id="xp" parent="xps" style="aspect=fixed;sketch=0;html=1;dashed=0;whitespace=wrap;fillColor=#2875E2;strokeColor=#ffffff;points=[[0.005,0.63,0],[0.1,0.2,0],[0.9,0.2,0],[0.5,0,0],[0.995,0.63,0],[0.72,0.99,0],[0.5,1,0],[0.28,0.99,0]];shape=mxgraph.kubernetes.icon2;fontSize=11;prIcon=deploy;verticalLabelPosition=bottom;verticalAlign=top;align=center;" value="&lt;b&gt;Crossplane&lt;/b&gt; + Azure providers&lt;br&gt;watches the API, calls ARM" vertex="1">
+          <mxGeometry height="48" width="50" x="95" y="45" as="geometry" />
+        </mxCell>
+        <mxCell id="api" parent="aks" style="aspect=fixed;sketch=0;html=1;dashed=0;whitespace=wrap;fillColor=#2875E2;strokeColor=#ffffff;points=[[0.005,0.63,0],[0.1,0.2,0],[0.9,0.2,0],[0.5,0,0],[0.995,0.63,0],[0.72,0.99,0],[0.5,1,0],[0.28,0.99,0]];shape=mxgraph.kubernetes.icon2;fontSize=11;prIcon=api;verticalLabelPosition=bottom;verticalAlign=top;align=center;" value="&lt;b&gt;Kubernetes API&lt;/b&gt;&lt;br&gt;(AKS-managed control plane)" vertex="1">
+          <mxGeometry height="48" width="50" x="815" y="690" as="geometry" />
+        </mxCell>
+        <mxCell id="note" parent="aks" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;align=left;spacingLeft=8;fillColor=#ffffff;strokeColor=#9673a6;dashed=1;" value="Pod IPs come from a private overlay range that exists only inside the cluster. Nothing outside reaches a pod except through the Gateway&#39;s load balancer." vertex="1">
+          <mxGeometry height="90" width="240" x="720" y="820" as="geometry" />
+        </mxCell>
+        <mxCell id="e7" edge="1" parent="aks" source="ddc" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=10;labelBackgroundColor=default;dashed=1;strokeColor=#888888;exitX=0.5;exitY=1;entryX=0.7;entryY=0;" target="operator" value="requests">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e8" edge="1" parent="aks" source="operator" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=10;labelBackgroundColor=default;dashed=1;strokeColor=#888888;exitX=0.3;exitY=0;entryX=0.5;entryY=1;" target="secret" value="writes">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e10" edge="1" parent="aks" source="istiod" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=10;labelBackgroundColor=default;dashed=1;strokeColor=#888888;exitX=0.5;exitY=0;entryX=0.3;entryY=1;" target="gw" value="programs (xDS)"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="575" y="590"/><mxPoint x="145" y="590"/></Array></mxGeometry></mxCell>
+        <mxCell id="e21" edge="1" parent="aks" source="pods" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=10;labelBackgroundColor=default;exitX=1;exitY=0.8;entryX=0;entryY=0.5;" target="api" value="Crossplane objects">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e22" edge="1" parent="aks" source="flux" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=10;labelBackgroundColor=default;dashed=1;strokeColor=#888888;exitX=1;exitY=0.5;entryX=1;entryY=0.5;" target="api" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e23" edge="1" parent="aks" source="xp" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=10;labelBackgroundColor=default;dashed=1;strokeColor=#888888;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" target="api" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" edge="1" parent="sub" source="lb" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=10;labelBackgroundColor=default;strokeWidth=2;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" target="gw" value="③">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e11" edge="1" parent="sub" source="pods" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=10;labelBackgroundColor=default;exitX=1;exitY=0.5;entryX=0.5;entryY=0;" target="nat" value="⑤ outbound">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e12" edge="1" parent="sub" source="flux" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=10;labelBackgroundColor=default;dashed=1;strokeColor=#888888;exitX=1;exitY=0.5;entryX=0.5;entryY=0;" target="nat" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e13" edge="1" parent="sub" source="xp" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=10;labelBackgroundColor=default;dashed=1;strokeColor=#888888;exitX=1;exitY=0.5;entryX=0.5;entryY=0;" target="nat" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e14" edge="1" parent="sub" source="nat" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=10;labelBackgroundColor=default;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" target="rg" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e15" edge="1" parent="sub" source="nat" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=10;labelBackgroundColor=default;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" target="cost" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e16" edge="1" parent="sub" source="nat" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=10;labelBackgroundColor=default;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" target="stor" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e17" edge="1" parent="sub" source="nat" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=10;labelBackgroundColor=default;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" target="acr" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" edge="1" parent="1" source="browser" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=10;labelBackgroundColor=default;exitX=0.5;exitY=0;entryX=0.3;entryY=1;" target="dns" value="① DNS lookup">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" edge="1" parent="1" source="browser" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=10;labelBackgroundColor=default;strokeWidth=2;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" target="lb" value="② HTTPS :443&lt;br&gt;(HTTP :80 → 301)">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e9" edge="1" parent="1" source="extdns" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=10;labelBackgroundColor=default;dashed=1;strokeColor=#888888;exitX=0;exitY=0.5;entryX=0.7;entryY=1;" target="dns" value="publishes A record&lt;br&gt;from HTTPRoute hostnames">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e18" edge="1" parent="1" source="nat" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=10;labelBackgroundColor=default;dashed=1;strokeColor=#888888;exitX=0.5;exitY=0;entryX=0;entryY=0.5;" target="github" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e19" edge="1" parent="1" source="nat" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=10;labelBackgroundColor=default;exitX=0.5;exitY=1;entryX=0;entryY=0.5;" target="entra" value="token exchange">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
