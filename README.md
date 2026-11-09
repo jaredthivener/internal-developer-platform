@@ -101,6 +101,24 @@ Starter assumptions:
 - The app's Kubernetes RBAC is read-only except for create, delete, and patch on `storage.azure.upbound.io` `accounts`. The API additionally rejects any resource type outside its allowlist (`src/lib/crossplane/allowedResources.ts`).
 - Every API route requires a signed-in session, and only users assigned to the portal's enterprise application can sign in.
 
+## Teardown
+
+```bash
+npm run azure:down            # asks you to type the resource group name
+npm run azure:down -- --yes   # no prompt
+```
+
+`scripts/azure/teardown-aks-platform.sh` removes everything `azure:up` creates, in an order that leaves nothing behind:
+
+1. Suspends Flux, then deletes every Crossplane managed resource so the providers delete the Azure resources they created (portal-created storage accounts and the smoke-test resource group included). It stops if any remain; set `SKIP_MANAGED_RESOURCE_CLEANUP=true` only when the cluster is broken and you have handled them yourself.
+2. Deletes every role assignment of the Crossplane and portal identities, at any scope, before the identities themselves; otherwise subscription-scope assignments stay behind as orphans.
+3. Deletes the `idp-mcsb-v2` policy assignment and the portal's Entra app registration (purged, not just soft-deleted).
+4. Deletes the resource group (cluster, node resource group, registry, storage, Key Vault, identities), then purges the Key Vault unless purge protection is on.
+5. Deletes the default Azure Monitor workspace AKS created for managed Prometheus, and its `DefaultResourceGroup-*` when empty, but only when no other data collection rule uses it. Azure removes its managed `MA_*` resource group with it.
+6. Removes the cluster's kubeconfig entries.
+
+A rerun after a full teardown changes nothing. It uses the same `RESOURCE_GROUP`, `AKS_CLUSTER_NAME`, `LOCATION` and identity/app name variables as the bootstrap.
+
 ## Storage Account Dev Workflow
 
 After the AKS platform deploy completes:

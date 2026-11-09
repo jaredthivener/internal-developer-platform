@@ -24,6 +24,7 @@ run() {
     sleep() { :; }
     kubectl() {
       printf "%s\n" "$*" >> "$WORK_DIR/kubectl.log"
+      printf "kubectl %s\n" "$*" >> "$WORK_DIR/calls.log"
       local arg
       for arg in "$@"; do
         [[ "$arg" == --from-env-file=* ]] && cp "${arg#--from-env-file=}" "$WORK_DIR/secret.env"
@@ -34,6 +35,10 @@ run() {
       fi
       [[ "$*" == "apply -f -" ]] && { cat >> "$WORK_DIR/applied.yaml"; echo "---" >> "$WORK_DIR/applied.yaml"; }
       [[ "$*" == *"get deployment idp-web"* ]] && printf "%s" "${STUB_DEPLOYED_IMAGE:-}"
+      [[ "$*" == "auth can-i"* ]] && echo yes
+      [[ "$*" == "api-resources --categories managed"* ]] && printf "%s" "${STUB_MANAGED_TYPES-resourcegroups.azure.m.upbound.io}"
+      [[ "$*" == *"get kustomizations"* ]] && printf "%s" "${STUB_KUSTOMIZATIONS-kustomization.kustomize.toolkit.fluxcd.io/idp}"
+      [[ "$*" == "get managed"* ]] && printf "%s" "${STUB_REMAINING_MANAGED:-}"
       return 0
     }
     git() {
@@ -49,7 +54,20 @@ run() {
     }
     az() {
       printf "%s\n" "$*" >> "$WORK_DIR/az.log"
+      printf "az %s\n" "$*" >> "$WORK_DIR/calls.log"
       case "$*" in
+        "account show"*) echo sub1 ;;
+        "aks show --resource-group rg --name c --output none") [[ "${STUB_CLUSTER:-yes}" == yes ]] ;;
+        "group exists"*) echo "${STUB_GROUP_EXISTS:-true}" ;;
+        "role assignment list --all --assignee-object-id"*) printf "%s" "${STUB_ROLE_IDS-$'"'"'/ra/1\n/ra/2'"'"'}" ;;
+        "ad app show"*"--query id"*) echo app-object-id ;;
+        "keyvault show-deleted"*purgeProtection*) echo "${STUB_PURGE_PROTECTION:-}" ;;
+        "keyvault show-deleted"*) [[ "${STUB_KV_DELETED:-yes}" == yes ]] ;;
+        "resource list --resource-group rg --resource-type"*) printf "%s" "${STUB_RG_DCRS-/rg/dcr}" ;;
+        "resource list --resource-type"*) printf "%s" "${STUB_ALL_DCRS:-}" ;;
+        "resource list --resource-group"*"length(@)"*) echo "${STUB_GROUP_RESOURCES:-0}" ;;
+        "resource show --ids"*monitoringAccounts*) printf "%s" "${STUB_WORKSPACE-/subscriptions/sub1/resourceGroups/DefaultResourceGroup-westus3/providers/microsoft.monitor/accounts/DefaultAzureMonitorWorkspace-westus3}" ;;
+        "resource show --ids "*"--query id"*) a="$*"; a="${a#resource show --ids }"; echo "${a%% *}" ;;
         "ad signed-in-user show"*) echo user-oid ;;
         "ad app list"*) printf "%s" "${STUB_APP_IDS:-}" ;;
         "ad app create"*) echo new-app-id ;;
@@ -87,7 +105,7 @@ run() {
   ' _ "$1" "$AZURE_DIR" "$2" 2>&1
 }
 
-reset_logs() { rm -f "$WORK_DIR"/az.log "$WORK_DIR"/kubectl.log "$WORK_DIR"/git.log "$WORK_DIR"/applied.yaml "$WORK_DIR"/kv-writes "$WORK_DIR"/secret.env "$WORK_DIR"/policy.json; }
+reset_logs() { rm -f "$WORK_DIR"/calls.log "$WORK_DIR"/az.log "$WORK_DIR"/kubectl.log "$WORK_DIR"/git.log "$WORK_DIR"/applied.yaml "$WORK_DIR"/kv-writes "$WORK_DIR"/secret.env "$WORK_DIR"/policy.json; }
 
 check() { # description, condition (evaluated), [context to print on failure]
   if eval "$2"; then
@@ -377,6 +395,70 @@ reset_logs
 out="$(STUB_CLIENT_SECRET='' run $BOOTSTRAP 'PLATFORM_KEYVAULT_NAME=kv1 AKS_CLUSTER_NAME=c PORTAL_APP_NAME=c-portal; ensure_portal_app')"
 check 'fails instead of storing an empty client secret' \
   '[[ $? -ne 0 ]] && ! grep -q "^portal-client-secret=" "$WORK_DIR/kv-writes" 2>/dev/null' "$out"
+
+# --- teardown ----------------------------------------------------------------
+TEARDOWN=teardown-aks-platform.sh
+WS=/subscriptions/sub1/resourceGroups/DefaultResourceGroup-westus3/providers/microsoft.monitor/accounts/DefaultAzureMonitorWorkspace-westus3
+down='RESOURCE_GROUP=rg AKS_CLUSTER_NAME=c LOCATION=westus3 PORTAL_APP_NAME=c-portal ASSUME_YES=true; main && echo down-ok'
+# step <pattern>: line number of the first call matching pattern (0 if none).
+step() { grep -n -m1 -E -- "$1" "$WORK_DIR/calls.log" | cut -d: -f1 || true; }
+
+reset_logs
+out="$(printf 'wrong\n' | run $TEARDOWN 'RESOURCE_GROUP=rg; main')"
+# shellcheck disable=SC2034 # read inside check's eval
+rc=$?
+check 'refuses to delete anything without the typed confirmation' \
+  '[[ $rc -ne 0 && "$out" == *"Not confirmed"* ]] && ! grep -q -E "delete|purge|patch" "$WORK_DIR/calls.log"' "$out$(cat "$WORK_DIR/calls.log")"
+reset_logs
+out="$(printf 'rg\n' | run $TEARDOWN 'RESOURCE_GROUP=rg AKS_CLUSTER_NAME=c PORTAL_APP_NAME=c-portal; main && echo down-ok')"
+check 'proceeds when the resource group name is typed' '[[ "$out" == *down-ok ]]' "$out"
+
+reset_logs
+out="$(STUB_APP_IDS=app1 STUB_KEYVAULT=kv1 run $TEARDOWN "$down")"
+order=""
+for pattern in "^kubectl -n cluster-config patch .*suspend" "^kubectl delete managed --all --all-namespaces" "^az role assignment delete --ids /ra/1 /ra/2" \
+  "^az policy assignment delete --name idp-mcsb-v2" "^az ad app delete --id app1" "deletedItems/app-object-id" "^az group delete --name rg --yes" \
+  "^az keyvault purge --name kv1" "^az resource delete --ids $WS" "^az group delete --name DefaultResourceGroup-westus3" "^kubectl config delete-context c"; do
+  order+="$(step "$pattern") "
+done
+# shellcheck disable=SC2034 # read inside check's eval
+sorted="$(tr ' ' '\n' <<<"$order" | grep . | sort -n | tr '\n' ' ')"
+check 'tears down in a safe order: Flux suspended, managed resources, role assignments, then the group, vault purge, workspace' \
+  '[[ "$out" == *down-ok && "$order" != *"  "* && "$order" != " "* && "$order" == "$sorted" ]]' "order: $order"$'"'"'\n'"'"'"$(cat "$WORK_DIR/calls.log")"
+check 'removes role assignments at every scope, not just inside the resource group' \
+  'grep -q "^role assignment list --all --assignee-object-id principal-oid" "$WORK_DIR/az.log"' "$(cat "$WORK_DIR/az.log")"
+
+reset_logs
+out="$(STUB_REMAINING_MANAGED='account.storage.azure.m.upbound.io/team-a/sa1' run $TEARDOWN "$down")"
+check 'stops before deleting the cluster while Crossplane still holds Azure resources' \
+  '[[ "$out" != *down-ok && "$out" == *team-a/sa1* && "$out" == *SKIP_MANAGED_RESOURCE_CLEANUP* ]] && ! grep -q -e "group delete" -e "role assignment delete" "$WORK_DIR/az.log"' "$out"
+reset_logs
+out="$(STUB_REMAINING_MANAGED='account.storage.azure.m.upbound.io/team-a/sa1' SKIP_MANAGED_RESOURCE_CLEANUP=true run $TEARDOWN "$down")"
+check 'SKIP_MANAGED_RESOURCE_CLEANUP leaves Crossplane alone and continues' \
+  '[[ "$out" == *down-ok ]] && ! grep -q "delete managed" "$WORK_DIR/kubectl.log" && grep -q "group delete --name rg" "$WORK_DIR/az.log"' "$out"
+
+reset_logs
+out="$(STUB_ALL_DCRS=/other/dcr run $TEARDOWN "$down")"
+check 'keeps the default Monitor workspace while another data collection rule uses it' \
+  '[[ "$out" == *down-ok && "$out" == *"still used by /other/dcr"* ]] && ! grep -q "resource delete" "$WORK_DIR/az.log"' "$out"
+reset_logs
+out="$(STUB_WORKSPACE=/subscriptions/sub1/resourceGroups/rg-mon/providers/microsoft.monitor/accounts/team-workspace run $TEARDOWN "$down")"
+check 'never deletes a Monitor workspace it did not get from AKS defaults' '! grep -q "resource delete" "$WORK_DIR/az.log"' "$(cat "$WORK_DIR/az.log")"
+reset_logs
+STUB_GROUP_RESOURCES=3 run $TEARDOWN "$down" >/dev/null
+check 'keeps the default resource group when other resources are in it' \
+  'grep -q "resource delete" "$WORK_DIR/az.log" && ! grep -q "group delete --name DefaultResourceGroup" "$WORK_DIR/az.log"' "$(cat "$WORK_DIR/az.log")"
+
+reset_logs
+out="$(STUB_KEYVAULT=kv1 STUB_PURGE_PROTECTION=true run $TEARDOWN "$down")"
+check 'does not try to purge a vault with purge protection' '[[ "$out" == *"cannot be purged"* ]] && ! grep -q "keyvault purge" "$WORK_DIR/az.log"' "$out"
+
+reset_logs
+out="$(STUB_CLUSTER=no STUB_GROUP_EXISTS=false STUB_ROLE_IDS='' STUB_POLICY_ASSIGNED=no STUB_APP_IDS='' run $TEARDOWN "$down")"
+check 'a rerun after a full teardown deletes nothing and succeeds' \
+  '[[ "$out" == *down-ok ]] && ! grep -q -E "^az .*(delete|purge)|^kubectl (delete managed|.*patch)" "$WORK_DIR/calls.log"' "$out$(cat "$WORK_DIR/calls.log")"
+check 'npm run azure:down runs the teardown script' \
+  'grep -q "\"azure:down\": \"bash scripts/azure/teardown-aks-platform.sh\"" "$AZURE_DIR/../../package.json"' ""
 
 # --- hygiene -----------------------------------------------------------------
 check 'no temp files with secrets left behind' '[[ -z "$(ls -A "$WORK_DIR/tmp")" ]]' "$(ls -la "$WORK_DIR/tmp")"
