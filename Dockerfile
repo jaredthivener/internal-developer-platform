@@ -1,13 +1,13 @@
 # syntax=docker/dockerfile:1
 
-FROM cgr.dev/chainguard/node:latest-dev@sha256:4557d31cffa6e74dcede97057b0a26e9c203ea77eac88b28d88592cf98c149db AS deps
+FROM cgr.dev/chainguard/node:latest-dev@sha256:c50cc3b01363d48e078a253ae4d5cb7318bacc03d61506b77f2dd98f6543f8fe AS deps
 WORKDIR /app
 ENV NPM_CONFIG_CACHE=/tmp/npm-cache
 
 COPY package.json package-lock.json ./
 RUN npm ci
 
-FROM cgr.dev/chainguard/node:latest-dev@sha256:4557d31cffa6e74dcede97057b0a26e9c203ea77eac88b28d88592cf98c149db AS builder
+FROM cgr.dev/chainguard/node:latest-dev@sha256:c50cc3b01363d48e078a253ae4d5cb7318bacc03d61506b77f2dd98f6543f8fe AS builder
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NPM_CONFIG_CACHE=/tmp/npm-cache
@@ -16,7 +16,7 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build
 
-FROM cgr.dev/chainguard/node:latest@sha256:8828c6e74c782babb020e684f026a7747d91a0699e7f2a2163f905c47f65e4da AS runtime-clean
+FROM cgr.dev/chainguard/node:latest@sha256:af96c952fbc36cde8979dadfeb505691a1e214650128dd895a360192c168a719 AS runtime-clean
 COPY --from=builder /sbin/apk /sbin/apk
 COPY --from=builder /usr/lib/libapk.so* /usr/lib/
 USER 0
